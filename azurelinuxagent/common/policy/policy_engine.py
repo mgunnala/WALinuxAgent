@@ -16,13 +16,13 @@
 
 
 import regorus
+import time
 import json
 from azurelinuxagent.common.utils.textutil import parse_doc, parse_json, findall, find, findtext, getattrib, gettext, format_exception, \
     is_str_none_or_whitespace, is_str_empty
 from azurelinuxagent.common.protocol.restapi import Extension
 from azurelinuxagent.common.protocol.extensions_goal_state_from_extensions_config import ExtensionsGoalStateFromExtensionsConfig
 
-# TO DO - should this be a singleton?
 class PolicyEngine():
 
     def __init__(self):
@@ -39,19 +39,31 @@ class PolicyEngine():
         except Exception as e:
             raise Exception("Error adding policy from file: " + str(e))
 
-    def add_data(self, data_json):
-        # TO DO - accept string input instead of a file for data and
-        # input functions
+    def add_data_from_file(self, data_file):
+        # expects the input file to be a json
         try:
-            data = json.load(open(data_json))
+            data = json.load(open(data_file))
             self._engine.add_data(data)
         except Exception as e:
             raise Exception("Error adding data: " + str(e))
-
-    def set_input(self, input_json):
+      
+    def add_data_from_json(self, data_json):
         try:
-            input = json.load(open(input_json))
+            self._engine.add_data_json(data_json)
+        except Exception as e:
+            raise Exception("Error adding data: " + str(e))
+
+    def set_input_from_file(self, input_file):
+      # this method expects the input file to be a json
+        try:
+            input = json.load(open(input_file))
             self._engine.set_input(input)
+        except Exception as e:
+            raise Exception("Error setting input: " + str(e))
+
+    def set_input_from_json(self, input_json):
+        try:
+            self._engine.set_input_json(input_json)
         except Exception as e:
             raise Exception("Error setting input: " + str(e))
 
@@ -69,11 +81,20 @@ class PolicyEngine():
         output = json.loads(output_json)
         return output["result"][0]["expressions"][0]["value"]["allowed_extensions"]
 
-
     def get_denied_list(self, output_json):
         output = json.loads(output_json)
         return output["result"][0]["expressions"][0]["value"]["denied_extensions"]
 
+    def convert_list_to_json(self, list):
+      # TO DO - update this method so we're capturing all of the attributes/settings in the list objects
+      ext_dict = {ext[0]: {"version": ext[1].split('-')[1]} for ext in list}
+
+      # Wrap in 'incoming' object
+      json_obj = {'incoming': ext_dict}
+
+      # Convert to JSON string
+      json_str = json.dumps(json_obj, indent=4)
+      return json_str
 
     # TO DO
     def check_for_wheel_file():
@@ -83,27 +104,29 @@ class PolicyEngine():
 # for testing
 def test1():
 
-    # policy_path = "./extension_list/extension_policy.rego"
-    # # data_path = "./extension_list/extension-data-empty2.json"
-    # data_path = "./extension_list/extension-data.json"
-    # # data_path = "./extension_list/extension-data-all.json"
-    # input_path = "./extension_list/extension-input-newVersion.json"
+    policy_path = "./extension_list/extension_policy.rego"
+    # data_path = "./extension_list/extension-data-empty2.json"
+    data_path = "./extension_list/extension-data.json"
+    # data_path = "./extension_list/extension-data-all.json"
+    input_path = "./extension_list/extension-input-newVersion.json"
 
-    # # Create engine
-    # engine = PolicyEngine()
-    # engine.add_policy(policy_path)
-    # engine.add_data(data_path)
-    # engine.set_input(input_path)
+    # Create engine
+    engine = PolicyEngine()
+    engine.add_policy(policy_path)
+    engine.add_data_from_file(data_path)
+    engine.set_input_from_file(input_path)
 
-    # res = engine.eval_query('data.extension_policy')
-    # allowed = engine.get_allowed_list(res)
-    # allowed_names = list(allowed.keys())
-    # print("Allowed extensions: " + str(allowed))
+    res = engine.eval_query('data.extension_policy')
+    allowed = engine.get_allowed_list(res)
+    allowed_names = list(allowed.keys())
+    print("Allowed extensions: " + str(allowed))
 
-    # denied = engine.get_denied_list(res)
-    # denied_names = list(denied.keys())
-    # print("Denied extensions: " + str(denied))
+    denied = engine.get_denied_list(res)
+    denied_names = list(denied.keys())
+    print("Denied extensions: " + str(denied))
     pass
+  
+  
 
 def test2():
 
@@ -170,14 +193,66 @@ def test2():
 
         # build a list of all extensions from crp
         all_extensions.append(extension)
-    
+  
     # all_extensions is now input
     print(all_extensions)
+    
+    # we want to convert it into a json input
 
+def test3():
+    # log time
+    start_time = time.time()
 
+    # set up policy engine
+    policy_path = "./extension_list/extension_policy.rego"
+    data_path = "./extension_list/demo-data.json" # specify allowed extensions
+    # data_path = "./extension_list/extension-data-all2.json" # allow all
+    # data_path = "./extension_list/extension-data-empty2.json" # deny all
+    engine = PolicyEngine()
+    engine.add_policy(policy_path)
+    engine.add_data_from_file(data_path)
 
+    # define input
+    # all_extensions comes from agent exthandler after processing goal state
+    # list elements are tuples of (ExtensionSettings, Extension)
+    all_extensions = [("Microsoft.CPlat.Core.LinuxPatchExtension", "Microsoft.CPlat.Core.LinuxPatchExtension-1.6.49"), \
+            ("Microsoft.Azure.Monitor.AzureMonitorLinuxAgent", "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent-1.29.4"), \
+            ("Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent", "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent-2.24.325"), \
+            ("Microsoft.CPlat.Core.RunCommandLinux", "Microsoft.CPlat.Core.RunCommandLinux-1.0.5")]
+
+    # convert and set input
+    print("-----------------Policy engine input----------------")
+    print(all_extensions)
+    converted_input = engine.convert_list_to_json(all_extensions)
+    engine.set_input_from_json(converted_input)
+
+    # run policy and get allowed/denied lists
+    res = engine.eval_query('data.extension_policy')
+    allowed = engine.get_allowed_list(res)
+    denied = engine.get_denied_list(res)
+
+    # print results
+    print("\n-----------------Policy engine output---------------")
+    allowed_names = list(allowed.keys())
+    print("Allowed extensions: " + str(allowed_names))
+    denied_names = list(denied.keys())
+    print("Denied extensions: " + str(denied_names))
+
+    # # log time taken
+    # end_time = time.time()
+    # elapsed_time_ms = round(1000 * (end_time - start_time), 5)
+    # print("\nTime taken: " + str(elapsed_time_ms) + " ms")
+
+    # example of how we'd process this in agent code
+    print("\n-----------------Guest agent logs-------------------")
+    for e1, e2 in all_extensions:
+        if e1 in allowed_names:
+            print("Installing " + e1)
+        elif e1 in denied_names:
+            print("Extension " + e1 + " is blocked by policy. Skipping installation.")
 
 
 if __name__ == "__main__":
     # test1()
-    test2()
+    # test2()
+    test3()

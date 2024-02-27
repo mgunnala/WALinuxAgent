@@ -1,0 +1,18 @@
+{
+    "allowed": {
+        "Microsoft.CPlat.Core.LinuxPatchExtension": {
+            "version": "1.6.49",
+            "upgradable": false
+        },
+        "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
+            "signature": "xyz245",
+            "upgradable": true
+        },
+        "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
+            "type": "app"
+        },
+        "Microsoft.CPlat.Core.RunCommandLinux": {
+            "type": "app"
+        }
+    }
+}
