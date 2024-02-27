@@ -475,6 +475,11 @@ class ExtHandlersHandler(object):
         # Since all_extensions are sorted based on sort_key, the last element would be the maximum based on the sort_key
         max_dep_level = self.__get_dependency_level(all_extensions[-1]) if any(all_extensions) else 0
 
+        # ADD HERE - here, we can run the policy engine
+        # 1. set up the policy engine, set policy file and data (should be baked into image)
+        # 2. pass all_extensions list to the engine
+        # 3. allowed, disallowed list tuple returned
+
         depends_on_err_msg = None
         extensions_enabled = conf.get_extensions_enabled()
         for extension, ext_handler in all_extensions:
@@ -484,7 +489,11 @@ class ExtHandlersHandler(object):
             # In case of extensions disabled, we skip processing extensions. But CRP is still waiting for some status
             # back for the skipped extensions. In order to propagate the status back to CRP, we will report status back
             # here with an error message.
-            if not extensions_enabled:
+
+            # ADD HERE
+            # extension_allowed = (check if in allowed list)
+            # add check for extension_allowed here
+            if not extensions_enabled: # ADD HERE - check for if THIS extension is allowed
                 agent_conf_file_path = get_osutil().agent_conf_file_path
                 msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
                       "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
