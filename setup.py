@@ -318,7 +318,7 @@ class install(_install):  # pylint: disable=C0103
 # module was deprecated. Depending on the Linux distribution the
 # implementation may be broken prior to Python 3.7 wher the functionality
 # will be removed from Python 3
-requires = []  # pylint: disable=invalid-name
+requires = ['regorus']  # pylint: disable=invalid-name
 if sys.version_info[0] >= 3 and sys.version_info[1] >= 7:
     requires = ['distro']  # pylint: disable=invalid-name
 

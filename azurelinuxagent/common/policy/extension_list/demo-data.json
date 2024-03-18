@@ -2,17 +2,23 @@
     "allowed": {
         "Microsoft.CPlat.Core.LinuxPatchExtension": {
             "version": "1.6.49",
-            "upgradable": false
+            "upgradable": false,
+            "allowed_operations": [
+                "Install",
+                "Uninstall",
+                "Update"
+            ]
         },
         "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
             "signature": "xyz245",
-            "upgradable": true
+            "upgradable": true,
+            "version": "1.29.4"
         },
         "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
-            "type": "app"
+            "version": "2.24.325"
         },
         "Microsoft.CPlat.Core.RunCommandLinux": {
-            "type": "app"
+            "version": "1.0.5"
         }
     }
 }
