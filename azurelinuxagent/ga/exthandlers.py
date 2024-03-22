@@ -480,12 +480,13 @@ class ExtHandlersHandler(object):
         # 1. set up the policy engine, set policy file and data (should be baked into image)
         # 2. pass all_extensions list to the engine
         # 3. allowed, disallowed list tuple returned
+        # path is currently hardcoded - need to update
         home_path = "/home/azureuser/test/policy/extension_list"
         policy_path = os.path.join(home_path, "extension_policy.rego")
         data_path = os.path.join(home_path, "extension-data-all2.json")
         engine = ExtensionPolicyEngine(policy_path, data_path)
         logger.info("Policy engine set up: {0}".format(engine))
-        # engine.set_input_from_list(all_extensions)
+        engine.set_input_from_list(all_extensions)
 
         depends_on_err_msg = None
         extensions_enabled = conf.get_extensions_enabled()

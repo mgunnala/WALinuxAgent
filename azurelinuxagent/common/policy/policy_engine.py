@@ -23,13 +23,11 @@ import os
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.utils.textutil import parse_doc, parse_json, findall, find, findtext, getattrib, gettext, format_exception, \
     is_str_none_or_whitespace, is_str_empty
-from azurelinuxagent.common.protocol.restapi import Extension
+from azurelinuxagent.common.protocol.restapi import Extension, ExtHandlerStatus, ExtensionSettings
 from azurelinuxagent.common.protocol.extensions_goal_state_from_extensions_config import ExtensionsGoalStateFromExtensionsConfig
 
-class PolicyEngine():
-    """
-    Base class for policy engine
-    """
+class PolicyEngine:
+    """Base class for policy engine"""
     def __init__(self, policy_file=None, data_file=None):
         self._engine = regorus.Engine()
         if policy_file is not None:
@@ -77,13 +75,15 @@ class PolicyEngine():
 
 class ExtensionPolicyEngine(PolicyEngine):
     """Implement the policy engine for extension allow/disallow policy"""
-    policy_path = "./extension_list/extension_policy.rego"
-    data_path = "./extension_list/extension-data-all2.json"
+    policy_path = None
+    data_path = None
     all_extensions = []
     allowed_list = None
     denied_list = None
 
     def __init__(self, policy_path=None, data_path=None):
+        self.policy_path = policy_path
+        self.data_path = data_path
         super().__init__(self.policy_path, self.data_path)
 
     def set_allowed_list(self, output_json):
@@ -95,21 +95,36 @@ class ExtensionPolicyEngine(PolicyEngine):
         output = json.loads(output_json)
         self.denied_list = output["result"][0]["expressions"][0]["value"]["denied_extensions"]
 
-    def set_input_from_list(self, list):
-        self.all_extensions = list
-        logger.info("Manu setting input from list: " + str(list))
-        # self.set_input_from_json(self.convert_list_to_json(list))
+    def set_input_from_list(self, ext_list):
+        self.all_extensions = ext_list
+        self.set_input_from_json(self.convert_list_to_json(ext_list))
 
-    def convert_list_to_json(self, list):
-        # TO DO - update this method so we're capturing all of the attributes/settings in the list objects
-        ext_dict = {ext[0]: {"version": ext[1].split('-')[1]} for ext in list}
+    def convert_list_to_json(self, ext_list):
+        input_json = {
+          "incoming": {}
+        }
+        for setting, ext in ext_list:
+            template = {
+                "name": None
+                # "version": None,
+                # "state": None,
+                # "settings": None,
+                # "manifest_uris": None,
+                # "supports_multi_config": None,
+                # "is_invalid_setting": None,
+                # "invalid_setting_reason": None
+            }
+            template["name"] = ext.name
+            # template["version"] = ext.version
+            # template["state"] = ext.state
+            # template["settings"] = setting
+            # template["manifest_uris"] = ext.manifest_uris
+            # template["supports_multi_config"] = ext.supports_multi_config
+            # template["is_invalid_setting"] = ext.is_invalid_setting
+            # template["invalid_setting_reason"] = ext.invalid_setting_reason
+            input_json["incoming"][ext.name] = template
 
-        # Wrap in 'incoming' object
-        json_obj = {'incoming': ext_dict}
-
-        # Convert to JSON string
-        json_str = json.dumps(json_obj, indent=4)
-        return json_str
+        return input_json
 
 
 # for testing
