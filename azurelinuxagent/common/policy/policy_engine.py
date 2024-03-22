@@ -97,7 +97,8 @@ class ExtensionPolicyEngine(PolicyEngine):
 
     def set_input_from_list(self, ext_list):
         self.all_extensions = ext_list
-        self.set_input_from_json(self.convert_list_to_json(ext_list))
+        converted_list = self.convert_list_to_json(self.all_extensions)
+        self.set_input_from_json(converted_list)
 
     def convert_list_to_json(self, ext_list):
         input_json = {
@@ -124,7 +125,7 @@ class ExtensionPolicyEngine(PolicyEngine):
             # template["invalid_setting_reason"] = ext.invalid_setting_reason
             input_json["incoming"][ext.name] = template
 
-        return input_json
+        return json.dumps(input_json)
 
 
 # for testing

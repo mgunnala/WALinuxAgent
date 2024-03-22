@@ -476,21 +476,28 @@ class ExtHandlersHandler(object):
         # Since all_extensions are sorted based on sort_key, the last element would be the maximum based on the sort_key
         max_dep_level = self.__get_dependency_level(all_extensions[-1]) if any(all_extensions) else 0
 
-        # ADD HERE - here, we can run the policy engine
-        # 1. set up the policy engine, set policy file and data (should be baked into image)
-        # 2. pass all_extensions list to the engine
-        # 3. allowed, disallowed list tuple returned
-        # path is currently hardcoded - need to update
+        # set up policy engine and query for allowed extensions
         home_path = "/home/azureuser/test/policy/extension_list"
         policy_path = os.path.join(home_path, "extension_policy.rego")
         data_path = os.path.join(home_path, "extension-data-all2.json")
         engine = ExtensionPolicyEngine(policy_path, data_path)
         logger.info("Policy engine set up: {0}".format(engine))
         engine.set_input_from_list(all_extensions)
+        res = engine.eval_query('data.extension_policy')
+        engine.set_allowed_list(res)
+        allowed = engine.allowed_list
 
         depends_on_err_msg = None
         extensions_enabled = conf.get_extensions_enabled()
         for extension, ext_handler in all_extensions:
+
+            # check if extension allowed
+            if ext_handler.name in allowed.keys():
+                logger.info("Extension {0} is allowed".format(ext_handler.name))
+                extension_allowed = True
+            else:
+                logger.info("Extension {0} is disallowed".format(ext_handler.name))
+                extension_allowed = False
 
             handler_i = ExtHandlerInstance(ext_handler, self.protocol, extension=extension)
 
@@ -498,13 +505,13 @@ class ExtHandlersHandler(object):
             # back for the skipped extensions. In order to propagate the status back to CRP, we will report status back
             # here with an error message.
 
-            # ADD HERE
-            # extension_allowed = (check if in allowed list)
-            # add check for extension_allowed here
-            if not extensions_enabled: # ADD HERE - check for if THIS extension is allowed
+            if not extensions_enabled or not extension_allowed:
                 agent_conf_file_path = get_osutil().agent_conf_file_path
-                msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
-                      "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
+                if not extensions_enabled:
+                    msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
+                          "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
+                else:
+                    msg = "Extension is disallowed by agent policy and will not be processed."
                 ext_full_name = handler_i.get_extension_full_name(extension)
                 logger.info('')
                 logger.info("{0}: {1}".format(ext_full_name, msg))
