@@ -16,15 +16,9 @@
 
 
 import regorus
-import time
 import json
-import sys
-import os
 from azurelinuxagent.common import logger
-from azurelinuxagent.common.utils.textutil import parse_doc, parse_json, findall, find, findtext, getattrib, gettext, format_exception, \
-    is_str_none_or_whitespace, is_str_empty
 from azurelinuxagent.common.protocol.restapi import Extension, ExtHandlerStatus, ExtensionSettings
-from azurelinuxagent.common.protocol.extensions_goal_state_from_extensions_config import ExtensionsGoalStateFromExtensionsConfig
 
 class PolicyEngine:
     """Base class for policy engine"""
@@ -36,9 +30,6 @@ class PolicyEngine:
             with open(data_file, 'r') as f:
                 data = json.load(f)
             self._engine.add_data(data)
-
-    def __str__(self):
-        return "My engine"
 
     def add_policy(self, policy_file):
         """Add policy from file"""
@@ -87,7 +78,6 @@ class ExtensionPolicyEngine(PolicyEngine):
         super().__init__(self.policy_path, self.data_path)
 
     def set_allowed_list(self, output_json):
-    
         output = json.loads(output_json)
         self.allowed_list = output["result"][0]["expressions"][0]["value"]["allowed_extensions"]
 
@@ -126,166 +116,3 @@ class ExtensionPolicyEngine(PolicyEngine):
             input_json["incoming"][ext.name] = template
 
         return json.dumps(input_json)
-
-
-# for testing
-def test1():
-
-    # set up engine
-    policy_path = "./extension_list/extension_policy.rego"
-    data_path = "./extension_list/extension-data.json"
-    input_path = "./extension_list/extension-input-newVersion.json"
-    engine = PolicyEngine()
-    engine.add_policy(policy_path)
-    engine.add_data(data_path)
-    engine.set_input(input_path)
-
-    sample_xml = \
-        """
-        <RootElement>
-        <Plugins>
-          <Plugin name="Microsoft.CPlat.Core.NullSeqB" version="2.0.1" location="https://zrdfepirv2cbn04prdstr01a.blob.core.windows.net/f72653efd9e349ed9842c8b99e4c1712/Microsoft.CPlat.Core_NullSeqB_useast2euap_manifest.xml" state="enabled" autoUpgrade="false" failoverlocation="https://zrdfepirv2cbz06prdstr01a.blob.core.windows.net/f72653efd9e349ed9842c8b99e4c1712/Microsoft.CPlat.Core_NullSeqB_useast2euap_manifest.xml" runAsStartupTask="false" isJson="true" useExactVersion="true" />
-          <Plugin name="Microsoft.CPlat.Core.NullSeqA" version="2.0.1" location="https://zrdfepirv2cbn04prdstr01a.blob.core.windows.net/f72653efd9e349ed9842c8b99e4c1712/Microsoft.CPlat.Core_NullSeqA_useast2euap_manifest.xml" state="enabled" autoUpgrade="false" failoverlocation="https://zrdfepirv2cbn06prdstr01a.blob.core.windows.net/f72653efd9e349ed9842c8b99e4c1712/Microsoft.CPlat.Core_NullSeqA_useast2euap_manifest.xml" runAsStartupTask="false" isJson="true" useExactVersion="true" />
-        </Plugins>
-        <PluginSettings>
-          <Plugin name="Microsoft.CPlat.Core.NullSeqA" version="2.0.1">
-            <DependsOn dependencyLevel="1">
-              <DependsOnExtension handler="Microsoft.CPlat.Core.NullSeqB" />
-            </DependsOn>
-            <RuntimeSettings seqNo="0">{
-              "runtimeSettings": [
-                {
-                  "handlerSettings": {
-                    "publicSettings": {"01_add_extensions_with_dependency":"ff2a3da6-8e12-4ab6-a4ca-4e3a473ab385"}
-                  }
-                }
-              ]
-            }
-            </RuntimeSettings>
-          </Plugin>
-          <Plugin name="Microsoft.CPlat.Core.NullSeqB" version="2.0.1">
-            <RuntimeSettings seqNo="0">{
-              "runtimeSettings": [
-                {
-                  "handlerSettings": {
-                    "publicSettings": {"01_add_extensions_with_dependency":"2e837740-cf7e-4528-b3a4-241002618f05"}
-                  }
-                }
-              ]
-            }
-            </RuntimeSettings>
-          </Plugin>
-        </PluginSettings>
-        </RootElement>"""
-
-    xml_doc = parse_doc(sample_xml)
-    plugins_list = find(xml_doc, "Plugins")
-    plugins = findall(plugins_list, "Plugin")
-    plugin_settings_list = find(xml_doc, "PluginSettings")
-    plugin_settings = findall(plugin_settings_list, "Plugin")
-
-
-    all_extensions = []
-    for plugin in plugins:
-        extension = Extension()
-
-        ExtensionsGoalStateFromExtensionsConfig._parse_plugin(extension, plugin)
-        ExtensionsGoalStateFromExtensionsConfig._parse_plugin_settings(extension, plugin_settings)
-
-        # build a list of all extensions from crp
-        all_extensions.append(extension)
-  
-    # all_extensions is now input
-    print(all_extensions)
-    
-    # we want to convert it into a json input
-
-def demo(scenario):
-    # log time
-    start_time = time.time()
-
-    # set up policy engine
-    policy_path = "./extension_list/extension_policy.rego"
-    if scenario == "allow_all":
-        data_path = "./extension_list/extension-data-all2.json"
-    elif scenario == "deny_all":
-        data_path = "./extension_list/extension-data-empty2.json"
-    elif scenario == "demo":
-        data_path = "./extension_list/extension-data-real.json"
-    else:
-        data_path = "./extension_list/extension-data-real.json"
-    engine = ExtensionPolicyEngine(policy_path, data_path)
-
-    # define input
-    # all_extensions comes from agent exthandler after processing goal state
-    # list elements are tuples of (ExtensionSettings, Extension)
-    all_extensions = [(None, 'Microsoft.Azure.Extensions.CustomScript'),
-                      (None, 'Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux'),
-                      ('Microsoft.OSTCExtensions.VMAccessForLinux', 'Microsoft.OSTCExtensions.VMAccessForLinux'),
-                      ('Microsoft.CPlat.Core.LinuxPatchExtension', 'Microsoft.CPlat.Core.LinuxPatchExtension'),
-                      ('Microsoft.Azure.Monitor.AzureMonitorLinuxAgent', 'Microsoft.Azure.Monitor.AzureMonitorLinuxAgent'),
-                      ('Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent', 'Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent'),
-                      ('Microsoft.CPlat.Core.RunCommandLinux', 'Microsoft.CPlat.Core.RunCommandLinux')]
-
-    # convert and set input
-    print("-----------------Policy engine input----------------")
-    print(all_extensions)
-    converted_input = """
-    {
-    "incoming": {
-        "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {
-            "name": "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux"
-        },
-        "Microsoft.Azure.Extensions.CustomScript": {
-            "name": "Microsoft.Azure.Extensions.CustomScript"
-        },
-        "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
-            "name": "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent"
-        },
-        "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
-            "name": "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent"
-        },
-        "Microsoft.CPlat.Core.LinuxPatchExtension": {
-            "name": "Microsoft.CPlat.Core.LinuxPatchExtension"
-        },
-        "Microsoft.CPlat.Core.RunCommandLinux": {
-            "name": "Microsoft.CPlat.Core.RunCommandLinux"
-        },
-        "Microsoft.OSTCExtensions.VMAccessForLinux": {
-            "name": "Microsoft.OSTCExtensions.VMAccessForLinux"
-        }
-    }
-}
-    """
-    print(converted_input)
-    engine.set_input_from_json(converted_input)
-
-    # run policy and get allowed/denied lists
-    res = engine.eval_query('data.extension_policy')
-    engine.set_allowed_list(res)
-    engine.set_denied_list(res)
-    print("\n-----------------Policy engine output---------------")
-    print("Allowed extensions: " + str(engine.allowed_list.keys()))
-    print("Denied extensions: " + str(engine.denied_list.keys()))
-
-    # # log time taken
-    # end_time = time.time()
-    # elapsed_time_ms = round(1000 * (end_time - start_time), 5)
-    # print("\nTime taken: " + str(elapsed_time_ms) + " ms")
-
-    # example of how we'd process this in agent code
-    print("\n-----------------Guest agent logs-------------------")
-    for e1, e2 in all_extensions:
-        if e2 in engine.allowed_list.keys():
-            print("Installing " + e2)
-        elif e2 in engine.denied_list.keys():
-            print("Extension " + e2 + " is disabled by policy and will not be processed. Creating status file.")
-
-
-if __name__ == "__main__":
-    # test1()
-    if len(sys.argv) < 2:
-        scenario = "demo"
-    else:
-      scenario = sys.argv[1]
-    demo(scenario)
