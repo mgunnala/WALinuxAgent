@@ -479,7 +479,7 @@ class ExtHandlersHandler(object):
         # set up policy engine and query for allowed extensions
         home_path = "/home/azureuser/test/policy/extension_list"
         policy_path = os.path.join(home_path, "extension_policy.rego")
-        data_path = os.path.join(home_path, "extension-data-all2.json")
+        data_path = os.path.join(home_path, "extension-data-real.json")
         engine = ExtensionPolicyEngine(policy_path, data_path)
         logger.info("Policy engine set up: {0}".format(engine))
         engine.set_input_from_list(all_extensions)
@@ -511,7 +511,7 @@ class ExtHandlersHandler(object):
                     msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
                           "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
                 else:
-                    msg = "Extension is disallowed by agent policy and will not be processed."
+                    msg = "Extension is disallowed by guest agent policy and will not be installed."
                 ext_full_name = handler_i.get_extension_full_name(extension)
                 logger.info('')
                 logger.info("{0}: {1}".format(ext_full_name, msg))

@@ -210,22 +210,53 @@ def demo(scenario):
         data_path = "./extension_list/extension-data-all2.json"
     elif scenario == "deny_all":
         data_path = "./extension_list/extension-data-empty2.json"
+    elif scenario == "demo":
+        data_path = "./extension_list/extension-data-real.json"
     else:
-        data_path = "./extension_list/demo-data.json"
+        data_path = "./extension_list/extension-data-real.json"
     engine = ExtensionPolicyEngine(policy_path, data_path)
 
     # define input
     # all_extensions comes from agent exthandler after processing goal state
     # list elements are tuples of (ExtensionSettings, Extension)
-    all_extensions = [("Microsoft.CPlat.Core.LinuxPatchExtension", "Microsoft.CPlat.Core.LinuxPatchExtension-1.6.4"), \
-            ("Microsoft.Azure.Monitor.AzureMonitorLinuxAgent", "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent-1.29.4"), \
-            ("Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent", "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent-2.24.325"), \
-            ("Microsoft.CPlat.Core.RunCommandLinux", "Microsoft.CPlat.Core.RunCommandLinux-1.0.5")]
+    all_extensions = [(None, 'Microsoft.Azure.Extensions.CustomScript'),
+                      (None, 'Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux'),
+                      ('Microsoft.OSTCExtensions.VMAccessForLinux', 'Microsoft.OSTCExtensions.VMAccessForLinux'),
+                      ('Microsoft.CPlat.Core.LinuxPatchExtension', 'Microsoft.CPlat.Core.LinuxPatchExtension'),
+                      ('Microsoft.Azure.Monitor.AzureMonitorLinuxAgent', 'Microsoft.Azure.Monitor.AzureMonitorLinuxAgent'),
+                      ('Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent', 'Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent'),
+                      ('Microsoft.CPlat.Core.RunCommandLinux', 'Microsoft.CPlat.Core.RunCommandLinux')]
 
     # convert and set input
     print("-----------------Policy engine input----------------")
     print(all_extensions)
-    converted_input = engine.convert_list_to_json(all_extensions)
+    converted_input = """
+    {
+    "incoming": {
+        "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {
+            "name": "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux"
+        },
+        "Microsoft.Azure.Extensions.CustomScript": {
+            "name": "Microsoft.Azure.Extensions.CustomScript"
+        },
+        "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
+            "name": "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent"
+        },
+        "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
+            "name": "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent"
+        },
+        "Microsoft.CPlat.Core.LinuxPatchExtension": {
+            "name": "Microsoft.CPlat.Core.LinuxPatchExtension"
+        },
+        "Microsoft.CPlat.Core.RunCommandLinux": {
+            "name": "Microsoft.CPlat.Core.RunCommandLinux"
+        },
+        "Microsoft.OSTCExtensions.VMAccessForLinux": {
+            "name": "Microsoft.OSTCExtensions.VMAccessForLinux"
+        }
+    }
+}
+    """
     print(converted_input)
     engine.set_input_from_json(converted_input)
 
@@ -234,8 +265,8 @@ def demo(scenario):
     engine.set_allowed_list(res)
     engine.set_denied_list(res)
     print("\n-----------------Policy engine output---------------")
-    print("Allowed extensions: " + str(engine.allowed_list))
-    print("Denied extensions: " + str(engine.denied_list))
+    print("Allowed extensions: " + str(engine.allowed_list.keys()))
+    print("Denied extensions: " + str(engine.denied_list.keys()))
 
     # # log time taken
     # end_time = time.time()
@@ -245,16 +276,16 @@ def demo(scenario):
     # example of how we'd process this in agent code
     print("\n-----------------Guest agent logs-------------------")
     for e1, e2 in all_extensions:
-        if e1 in engine.allowed_list.keys():
-            print("Installing " + e1)
-        elif e1 in engine.denied_list.keys():
-            print("Extension " + e1 + " is disabled by policy and will not be processed. Creating status file.")
+        if e2 in engine.allowed_list.keys():
+            print("Installing " + e2)
+        elif e2 in engine.denied_list.keys():
+            print("Extension " + e2 + " is disabled by policy and will not be processed. Creating status file.")
 
 
 if __name__ == "__main__":
     # test1()
     if len(sys.argv) < 2:
-        scenario = "allow_all"
+        scenario = "demo"
     else:
       scenario = sys.argv[1]
     demo(scenario)
