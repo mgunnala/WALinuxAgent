@@ -91,6 +91,17 @@ class ExtensionPolicyEngine(PolicyEngine):
         self.set_input_from_json(converted_list)
 
     def convert_list_to_json(self, ext_list):
+        """
+        Convert a list of extensions to a json compatible with policy engine.
+        Expects a list of tuples in the form (extension_setting, extension_handler).
+        Returns json in the format:
+        { "incoming":
+            {
+                "ext1:":
+                    {
+                        "name": "extname1"
+                    ...
+        """
         input_json = {
           "incoming": {}
         }
