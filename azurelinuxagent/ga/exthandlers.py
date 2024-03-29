@@ -239,6 +239,7 @@ class ExtHandlerState(object):
     Installed = "Installed"
     Enabled = "Enabled"
     FailedUpgrade = "FailedUpgrade"
+    Disallowed = "Disallowed"
 
 
 class GoalStateStatus(object):
@@ -516,6 +517,7 @@ class ExtHandlersHandler(object):
                 logger.info('')
                 logger.info("{0}: {1}".format(ext_full_name, msg))
                 add_event(op=WALAEventOperation.ExtensionProcessing, message="{0}: {1}".format(ext_full_name, msg))
+                handler_i.set_handler_state(ExtHandlerState.Disallowed)
                 handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
                 handler_i.create_status_file_if_not_exist(extension,
                                                           status=ExtensionStatusValue.error,
