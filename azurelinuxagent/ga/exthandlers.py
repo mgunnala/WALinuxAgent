@@ -483,7 +483,7 @@ class ExtHandlersHandler(object):
         data_path = os.path.join(home_path, "extension-data-real.json")
         engine = ExtensionPolicyEngine(policy_path, data_path)
         logger.info("Policy engine set up: {0}".format(engine))
-        engine.set_input_from_list(all_extensions)
+        engine.set_input(all_extensions)
         res = engine.eval_query('data.extension_policy')
         engine.set_allowed_list(res)
         allowed = engine.allowed_list

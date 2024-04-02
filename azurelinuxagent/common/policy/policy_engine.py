@@ -17,6 +17,7 @@
 
 import regorus
 import json
+import os
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.protocol.restapi import Extension, ExtHandlerStatus, ExtensionSettings
 
@@ -32,31 +33,41 @@ class PolicyEngine:
             self._engine.add_data(data)
 
     def add_policy(self, policy_file):
-        """Add policy from file"""
+        """
+        Add policy from file.
+        Policy_file is expected to point to a valid Rego policy file.
+        """
         self._engine.add_policy_from_file(policy_file)
 
-    def add_data_from_file(self, data_file):
-        """Add data from file"""
-        # expects the input file to be a json
-        data = json.load(open(data_file))
-        self._engine.add_data(data)
+    def add_data(self, data):
+        """Add data based on input parameter type"""
+        if os.path.isfile(data):
+            data_file = json.load(open(data, 'r', encoding='utf-8'))
+            self._engine.add_data(data_file)
+        elif isinstance(data, dict):
+            data_json = json.dumps(data)
+            self._engine.add_data_json(data_json)
+        elif isinstance(data, str):
+            self._engine.add_data_json(data)
+        else:
+            logger.error("Unsupported data type: {0}".format(type(data)))
 
-    def add_data_from_json(self, data_json):
-        """Add data from json"""
-        self._engine.add_data_json(data_json)
-
-    def set_input_from_file(self, input_file):
-        """Set input from file"""
-        # this method expects the input file to be a json
-        input = json.load(open(input_file))
-        self._engine.set_input(input)
-
-    def set_input_from_json(self, input_json):
-        """Set input from json"""
-        self._engine.set_input_json(input_json)
+    def set_input(self, policy_input):
+        """Set input"""
+        if os.path.isfile(policy_input):
+            input_file = json.load(open(policy_input, 'r', encoding='utf-8'))
+            self._engine.set_input(input_file)
+        elif isinstance(policy_input, dict):
+            input_json = json.dumps(policy_input)
+            self._engine.set_input_json(input_json)
+        elif isinstance(policy_input, str):
+            self._engine.set_input_json(policy_input)
+        else:
+            logger.error("Unsupported input type: {0}".format(type(policy_input)))
 
     def eval_query(self, query, return_json=True):
-        """Evaluate query"""
+        """Evaluate query. If return_json is true,
+        return results as json, else return as string."""
         if return_json:
             results = self._engine.eval_query_as_json(query)
         else:
@@ -68,9 +79,7 @@ class ExtensionPolicyEngine(PolicyEngine):
     """Implement the policy engine for extension allow/disallow policy"""
     policy_path = None
     data_path = None
-    all_extensions = []
     allowed_list = None
-    denied_list = None
 
     def __init__(self, policy_path=None, data_path=None):
         self.policy_path = policy_path
@@ -81,14 +90,14 @@ class ExtensionPolicyEngine(PolicyEngine):
         output = json.loads(output_json)
         self.allowed_list = output["result"][0]["expressions"][0]["value"]["allowed_extensions"]
 
-    def set_denied_list(self, output_json):
-        output = json.loads(output_json)
-        self.denied_list = output["result"][0]["expressions"][0]["value"]["denied_extensions"]
-
-    def set_input_from_list(self, ext_list):
-        self.all_extensions = ext_list
-        converted_list = self.convert_list_to_json(self.all_extensions)
-        self.set_input_from_json(converted_list)
+    def set_input(self, policy_input):
+        """
+        Set list of all extensions as input in policy engine.
+        Expects ext_list to be a list of tuples in the form
+        (extension_setting, extension_handler)
+        """
+        ext_json = self.convert_list_to_json(policy_input)
+        super().set_input(ext_json)
 
     def convert_list_to_json(self, ext_list):
         """
@@ -105,7 +114,7 @@ class ExtensionPolicyEngine(PolicyEngine):
         input_json = {
           "incoming": {}
         }
-        for setting, ext in ext_list:
+        for _, ext in ext_list:
             template = {
                 "name": None
                 # "version": None,
