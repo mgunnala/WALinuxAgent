@@ -1,0 +1,22 @@
+{
+    "allowed": {
+        "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {
+            "name": "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux"
+        },
+        "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
+            "name": "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent"
+        },
+        "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
+            "name": "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent"
+        },
+        "Microsoft.CPlat.Core.LinuxPatchExtension": {
+            "name": "Microsoft.CPlat.Core.LinuxPatchExtension"
+        },
+        "Microsoft.CPlat.Core.RunCommandLinux": {
+            "name": "Microsoft.CPlat.Core.RunCommandLinux"
+        },
+        "Microsoft.OSTCExtensions.VMAccessForLinux": {
+            "name": "Microsoft.OSTCExtensions.VMAccessForLinux"
+        }
+    }
+}

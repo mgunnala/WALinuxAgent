@@ -466,6 +466,14 @@ class ExtHandlersHandler(object):
 
         return all_extensions
 
+    def __get_policy_rule_file_path():
+        home_path = "/home/azureuser/test/policy/extension_list"
+        return os.path.join(home_path, "extension_policy.rego")
+
+    def __get_policy_data_file_path():
+        home_path = "/home/azureuser/test/policy/extension_list"
+        return os.path.join(home_path, "extension-data-real.json")
+
     def handle_ext_handlers(self, goal_state_id):
         if not self.ext_handlers:
             logger.info("No extension handlers found, not processing anything.")
@@ -478,15 +486,10 @@ class ExtHandlersHandler(object):
         max_dep_level = self.__get_dependency_level(all_extensions[-1]) if any(all_extensions) else 0
 
         # set up policy engine and query for allowed extensions
-        home_path = "/home/azureuser/test/policy/extension_list"
-        policy_path = os.path.join(home_path, "extension_policy.rego")
-        data_path = os.path.join(home_path, "extension-data-real.json")
+        policy_path = self.__get_policy_rule_file_path()
+        data_path = self.__get_policy_data_file_path()
         engine = ExtensionPolicyEngine(policy_path, data_path)
-        logger.info("Policy engine set up: {0}".format(engine))
-        engine.set_input(all_extensions)
-        res = engine.eval_query('data.extension_policy')
-        engine.set_allowed_list(res)
-        allowed = engine.allowed_list
+        allowed = engine.get_allowed_list(all_extensions)
 
         depends_on_err_msg = None
         extensions_enabled = conf.get_extensions_enabled()

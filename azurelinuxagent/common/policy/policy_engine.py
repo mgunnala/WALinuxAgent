@@ -21,6 +21,7 @@ import os
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.protocol.restapi import Extension, ExtHandlerStatus, ExtensionSettings
 
+
 class PolicyEngine:
     """Base class for policy engine"""
     def __init__(self, policy_file=None, data_file=None):
@@ -28,9 +29,9 @@ class PolicyEngine:
         if policy_file is not None:
             self._engine.add_policy_from_file(policy_file)
         if data_file is not None:
-            with open(data_file, 'r') as f:
-                data = json.load(f)
-            self._engine.add_data(data)
+            # with open(data_file, 'r') as f:
+            #     data = json.load(f)
+            self.add_data(data_file)
 
     def add_policy(self, policy_file):
         """
@@ -69,7 +70,7 @@ class PolicyEngine:
         """Evaluate query. If return_json is true,
         return results as json, else return as string."""
         if return_json:
-            results = self._engine.eval_query_as_json(query)
+            results = json.loads(self._engine.eval_query_as_json(query))
         else:
             results = self._engine.eval_query(query)
         return results
@@ -80,26 +81,31 @@ class ExtensionPolicyEngine(PolicyEngine):
     policy_path = None
     data_path = None
     allowed_list = None
+    all_extensions = None
 
     def __init__(self, policy_path=None, data_path=None):
         self.policy_path = policy_path
         self.data_path = data_path
         super().__init__(self.policy_path, self.data_path)
 
-    def set_allowed_list(self, output_json):
-        output = json.loads(output_json)
-        self.allowed_list = output["result"][0]["expressions"][0]["value"]["allowed_extensions"]
-
-    def set_input(self, policy_input):
+    def get_allowed_list(self, all_extensions):
         """
-        Set list of all extensions as input in policy engine.
-        Expects ext_list to be a list of tuples in the form
-        (extension_setting, extension_handler)
+        Get allowed list of extensions based on policy engine evaluation.
+        If allowed_list is already set, return it.
         """
-        ext_json = self.convert_list_to_json(policy_input)
+        # only query against the policy engine if the allowed list has
+        # not been set OR if the input extensions have changed
+        if self.allowed_list is not None and all_extensions == self.all_extensions:
+            return self.allowed_list
+        ext_json = self.__convert_list_to_json(all_extensions)
         super().set_input(ext_json)
+        output = self.eval_query('data.extension_policy')
+        if isinstance(output, str):
+            output = json.loads(output)
+        self.allowed_list = output["result"][0]["expressions"][0]["value"]["allowed_extensions"]
+        return self.allowed_list
 
-    def convert_list_to_json(self, ext_list):
+    def __convert_list_to_json(self, ext_list):
         """
         Convert a list of extensions to a json compatible with policy engine.
         Expects a list of tuples in the form (extension_setting, extension_handler).
