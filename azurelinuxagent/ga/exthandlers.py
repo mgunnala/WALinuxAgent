@@ -30,6 +30,7 @@ import zipfile
 from azurelinuxagent.common.future import LooseVersion as Version
 from collections import defaultdict
 from functools import partial
+from pathlib import Path
 
 from azurelinuxagent.common import conf
 from azurelinuxagent.common import logger
@@ -466,14 +467,6 @@ class ExtHandlersHandler(object):
 
         return all_extensions
 
-    def __get_policy_rule_file_path():
-        home_path = "/home/azureuser/test/policy/extension_list"
-        return os.path.join(home_path, "extension_policy.rego")
-
-    def __get_policy_data_file_path():
-        home_path = "/home/azureuser/test/policy/extension_list"
-        return os.path.join(home_path, "extension-data-real.json")
-
     def handle_ext_handlers(self, goal_state_id):
         if not self.ext_handlers:
             logger.info("No extension handlers found, not processing anything.")
@@ -486,8 +479,8 @@ class ExtHandlersHandler(object):
         max_dep_level = self.__get_dependency_level(all_extensions[-1]) if any(all_extensions) else 0
 
         # set up policy engine and query for allowed extensions
-        policy_path = self.__get_policy_rule_file_path()
-        data_path = self.__get_policy_data_file_path()
+        policy_path = str("/home/manugunnala/agents/WALinuxAgent/azurelinuxagent/common/policy/extension_list/extension_policy.rego")
+        data_path = str("/home/manugunnala/agents/WALinuxAgent/azurelinuxagent/common/policy/extension_list/extension-data-all.json")
         engine = ExtensionPolicyEngine(policy_path, data_path)
         allowed = engine.get_allowed_list(all_extensions)
 
@@ -516,11 +509,11 @@ class ExtHandlersHandler(object):
                           "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
                 else:
                     msg = "Extension is disallowed by guest agent policy and will not be installed."
+                    handler_i.set_handler_state(ExtHandlerState.Disallowed)
                 ext_full_name = handler_i.get_extension_full_name(extension)
                 logger.info('')
                 logger.info("{0}: {1}".format(ext_full_name, msg))
                 add_event(op=WALAEventOperation.ExtensionProcessing, message="{0}: {1}".format(ext_full_name, msg))
-                handler_i.set_handler_state(ExtHandlerState.Disallowed)
                 handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
                 handler_i.create_status_file_if_not_exist(extension,
                                                           status=ExtensionStatusValue.error,
