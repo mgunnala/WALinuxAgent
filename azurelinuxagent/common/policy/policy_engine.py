@@ -18,13 +18,17 @@
 # dependency is correctly installed.
 # pylint: disable=too-few-public-methods
 
-import regorus
 import os
+import sys
 import json
 from azurelinuxagent.common import logger
 
-# Policy rule and data files are expected to be in the same parent dir as this file.
+
+# Import regorus. Regorus sub-folder, policy rule and data files are expected to be in the same parent dir as this file.
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+REGO_PATH = os.path.join(CURRENT_DIR, 'regorus')
+sys.path.append(REGO_PATH)
+import regorus
 
 
 class PolicyEngine:
@@ -52,8 +56,7 @@ class PolicyEngine:
     def add_data(self, data):
         """Add data based on input parameter type"""
         if os.path.isfile(data):
-            data_file = json.load(open(data, 'r', encoding='utf-8'))
-            self._engine.add_data(data_file)
+            self._engine.add_data_from_json_file(data)
         elif isinstance(data, dict):
             data_json = json.dumps(data)
             self._engine.add_data_json(data_json)
@@ -65,8 +68,7 @@ class PolicyEngine:
     def set_input(self, policy_input):
         """Set input"""
         if os.path.isfile(policy_input):
-            input_file = json.load(open(policy_input, 'r', encoding='utf-8'))
-            self._engine.set_input(input_file)
+            self._engine.set_input_from_json_file(policy_input)
         elif isinstance(policy_input, dict):
             input_json = json.dumps(policy_input)
             self._engine.set_input_json(input_json)
@@ -127,6 +129,7 @@ class ExtensionPolicyEngine(PolicyEngine):
     extension_data_path = os.path.join(CURRENT_DIR, "agent-extension-default-data.json")
     allowed_list = None
     all_extensions = None
+    policy_output = None
 
     def __init__(self, policy_path=None, data_path=None):
         if policy_path is not None:
@@ -139,7 +142,23 @@ class ExtensionPolicyEngine(PolicyEngine):
         ext_json = convert_list_to_json(all_extensions)
         super().set_input(ext_json)
 
-    # def is_extension_download_allowed(self):
+    def get_extension_policy_output(self, all_extensions):
+        if self.policy_output is not None and all_extensions == self.all_extensions:
+            return self.policy_output
+        self.set_input(all_extensions)
+        self.policy_output = self.evaluate_query("data.agent_extension_policy", return_json=True)
+        return self.policy_output
+
+    def is_extension_download_allowed(self, all_extensions, extension_to_check):
+        output = self.get_extension_policy_output(all_extensions)
+        extensions_to_download = output['result'][0]['expressions'][0]['value']['extensions_to_download']
+        if extension_to_check.name in extensions_to_download:
+            return extensions_to_download[extension_to_check.name]['downloadAllowed']
+        else:
+            return False
+        # run the query
+        # set the full list
+        # check the specific extension
 
 
 """

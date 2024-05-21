@@ -489,9 +489,7 @@ class ExtHandlersHandler(object):
         for extension, ext_handler in all_extensions:
 
             if policy_enabled:
-                engine.set_input(all_extensions)
-                results = engine.evaluate_query("data.agent_extension_policy.extensions_to_download", return_json=False)
-                logger.info(str(results))
+                is_download_allowed = engine.is_extension_download_allowed(all_extensions, ext_handler)
 
             handler_i = ExtHandlerInstance(ext_handler, self.protocol, extension=extension)
 
