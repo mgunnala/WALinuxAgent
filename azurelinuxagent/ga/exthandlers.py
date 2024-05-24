@@ -239,6 +239,7 @@ class ExtHandlerState(object):
     Installed = "Installed"
     Enabled = "Enabled"
     FailedUpgrade = "FailedUpgrade"
+    Disallowed = "Disallowed"
 
 
 class GoalStateStatus(object):
@@ -483,23 +484,31 @@ class ExtHandlersHandler(object):
             engine = ExtensionPolicyEngine()
             if engine is None:
                 raise Exception("Failed to initialize PolicyEngine")
+            logger.info("Created policy engine successfully.")
         except Exception as e:
             policy_enabled = False
 
         for extension, ext_handler in all_extensions:
 
             if policy_enabled:
-                is_download_allowed = engine.is_extension_download_allowed(all_extensions, ext_handler)
+                download_allowed = engine.is_extension_download_allowed(all_extensions, ext_handler)
+            else:
+                # if policy disabled or failed to run, automatically allow extension download
+                download_allowed = True
 
             handler_i = ExtHandlerInstance(ext_handler, self.protocol, extension=extension)
 
             # In case of extensions disabled, we skip processing extensions. But CRP is still waiting for some status
             # back for the skipped extensions. In order to propagate the status back to CRP, we will report status back
             # here with an error message.
-            if not extensions_enabled:
+            if not extensions_enabled or not download_allowed:
                 agent_conf_file_path = get_osutil().agent_conf_file_path
-                msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
-                      "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
+                if not extensions_enabled:
+                    msg = "Extension will not be processed since extension processing is disabled. To enable extension " \
+                          "processing, set Extensions.Enabled=y in '{0}'".format(agent_conf_file_path)
+                else:
+                    msg = "Extension is disallowed by guest agent policy and will not be downloaded or installed."
+                    handler_i.set_handler_state(ExtHandlerState.Disallowed)
                 ext_full_name = handler_i.get_extension_full_name(extension)
                 logger.info('')
                 logger.info("{0}: {1}".format(ext_full_name, msg))

@@ -33,9 +33,6 @@ import regorus
 
 class PolicyEngine:
     """Base class for policy engine"""
-    is_running = False
-
-    """Constructor"""
 
     def __init__(self, policy_file=None, data_file=None):
         try:
@@ -109,7 +106,7 @@ def convert_list_to_json(ext_list):
     input_json = {
         "extensions": {}
     }
-    # TO DO - eventually, we may need to handle attributes other than name and signature
+    # TO DO - eventually, we will need to handle attributes other than name
     for _, ext in ext_list:
         is_signed = is_valid_signature()
         input_json["extensions"][ext.name] = {
@@ -126,7 +123,7 @@ class ExtensionPolicyEngine(PolicyEngine):
     """Implement the policy engine for extension allow/disallow policy"""
     # defaults for policy rule and data
     extension_policy_path = os.path.join(CURRENT_DIR, "agent_extension_policy.rego")
-    extension_data_path = os.path.join(CURRENT_DIR, "agent-extension-default-data.json")
+    extension_data_path = os.path.join(CURRENT_DIR, "agent-extension-data-allow-only.json")
     allowed_list = None
     all_extensions = None
     policy_output = None
@@ -156,40 +153,3 @@ class ExtensionPolicyEngine(PolicyEngine):
             return extensions_to_download[extension_to_check.name]['downloadAllowed']
         else:
             return False
-        # run the query
-        # set the full list
-        # check the specific extension
-
-
-"""
-
-class ExtensionPolicyEngine(PolicyEngine):  
-
-allowed_list: list = none  
-
-all_extensions: list = none 
-
-require_signed : bool 
-
-def get_global_policy() -> return json 
-
-def get_allowed_list(all_extensions: list) -> return list 
-
-def get_policy_for_extension(extension, enforcement_point=none) -> return json 
-
-def is_extension_allowed(extension_name: str) -> return bool 
-
-def is_extension_download_allowed(extension_name: str) -> return bool 
-
-def is_extension_install_allowed(extension_name: str) -> return bool 
-
-def is_extension_update_allowed(extension_name: str) -> return bool 
-
-def is_extension_uninstall_allowed(extension_name: str) -> return bool 
-
-def is_valid_signature(signature, signing_method) -> return bool 
-
-def __convert_list_to_json(all_extensions: list) -> return regorus-compatible json 
-
-  
-"""

@@ -1,19 +1,24 @@
 {
     "azureGuestAgentPolicy": {
         "signingRules": {
-            "extensionSigned": true
+            "extensionSigned": false
         },
         "allowListOnly": true
     },
     "azureGuestExtensionsPolicy": {
-        "test3": {
-            "runtimeRules": {}
+        "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {
         },
-        "test2": {
-            "signingRules": {
-                "extensionSigned": false
-            },
-            "runtimeRules": {}
+        "Microsoft.OSTCExtensions.VMAccessForLinux": {
+        },
+        "Microsoft.CPlat.Core.LinuxPatchExtension": {
+        },
+        "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent": {
+        },
+        "Microsoft.Azure.Security.Monitoring.AzureSecurityLinuxAgent": {
+        },
+        "Microsoft.CPlat.Core.RunCommandLinux": {
+        },
+        "Microsoft.GuestConfiguration.ConfigurationforLinux": {
         }
     }
 }
