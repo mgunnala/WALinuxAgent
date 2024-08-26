@@ -1,9 +1,8 @@
 # use open ssl
 
 import base64
-import subprocess
-from azurelinuxagent.common.utils.textutil import b64decode, compare_bytes
 from azurelinuxagent.common.utils.shellutil import run_command
+
 
 def convert_signature(sig_string, output_file):
     """
@@ -14,7 +13,6 @@ def convert_signature(sig_string, output_file):
     with open(output_file, "wb") as f:
         f.write(bin_sig)
     a = bin_sig
-
 
 
 def verify_signature(p7b_path, ext_path, cert_path):
@@ -40,5 +38,4 @@ def verify_signature(p7b_path, ext_path, cert_path):
             msg = "Content was verified but an error occurred writing out the signers certificates."
         else:
             msg = "Unknown error occurred during signature validation."
-
         raise ex

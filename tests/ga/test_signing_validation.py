@@ -37,7 +37,6 @@ class TestSignatureValidation(AgentTestCase):
             result = verify_signature(signature_file, self.ext_zip, self.root_cert)
             self.assertTrue(result)
 
-
     def test_signature_should_not_validate(self):
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.p7b', delete=True) as f:
             signature_file = f.name
