@@ -175,30 +175,71 @@ class ExtensionPolicyEngine(PolicyEngine):
         """
         self.ext_handler = ext_handler
         # TODO 1: need to remove the hardcoding
-        rule_file = "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent_extension_policy_invalid.rego"
-        policy_file = self.__get_policy_file()
+        rule_file = "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent_extension_policy.rego"
+        policy_file = self._get_policy_file()
         super().__init__(rule_file=rule_file, policy_file=policy_file)
 
     def is_extension_download_allowed(self):
         """
-        If feature is not enabled, return True.
+        Evaluate query to determine if extension is allowed to download.
+        If policy feature is not enabled, we always return true.
 
-        If feature is enabled, evaluate query with extension name. Return true if extension allowed to download, else
-        return false.
+        Download is allowed if:
+        - extension is present in allowlist, or allowlist rule is false
+        - extension is signed, or signing validation rule is false
         """
         if not self.is_policy_enforcement_enabled():
             return True
 
-        input_to_check = self.__build_input()
-        query = "data.agent_extension_policy.extensions_to_download"
-        self.evaluate_query(input_to_check=input_to_check, query=query)
+        name = self.ext_handler.name
+        input_to_check = self._build_input()
+        query = "data.agent_extension_policy"
+        result = self.evaluate_query(input_to_check=input_to_check, query=query)
+
+        # Check if extension is allowed
+        allowlist_result = result.get("extensions_to_download")
+        if allowlist_result is None:
+            msg = "attribute 'extensions_to_download' not found in query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+        ext_allowlist_result = allowlist_result.get(name)
+        if ext_allowlist_result is None:
+            msg = "extension {0} not found in allowlist query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+        is_ext_allowed = ext_allowlist_result.get("downloadAllowed")
+        if is_ext_allowed is None:
+            msg = "attribute 'downloadAllowed' not found in query result. Query returned: {0}".format(result)
+            raise PolicyError(msg)
+
+        # If extension is not allowed, raise error to block installation.
+        if not is_ext_allowed:
+            msg = "extension {0} is not present in allowlist. Extension installation is blocked.".format(name)
+            raise PolicyError(msg)
+
+        # If extension is allowed, then check if signing rule is validated
+        signing_result = result.get("extensions_validated")
+        if allowlist_result is None:
+            msg = "attribute 'extensions_validated' not found in query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+        ext_sign_result = signing_result.get(name)
+        if ext_sign_result is None:
+            msg = "extension {0} not found in signing query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+        is_signing_validated = ext_sign_result.get("signingValidated")
+        if is_signing_validated is None:
+            msg = "attribute 'signingValidated' not found in query result. Query returned: {0}".format(result)
+            raise PolicyError(msg)
+        if not is_signing_validated:
+            msg = "extension {0} is not signed. Extension installation is blocked.".format(name)
+            raise PolicyError(msg)
+        else:
+            return True
 
     @staticmethod
-    def __get_policy_file():
+    def _get_policy_file():
         # return either default or custom policy file
-        return "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent_extension_policy.rego"
+        return "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent-extension-default-data.json"
 
-    def __build_input(self):
+    def _build_input(self):
         """
         Converts extension to input json format:
         {
@@ -207,17 +248,22 @@ class ExtensionPolicyEngine(PolicyEngine):
             }
         }
         """
-        name = self.ext_handler.get_extension_full_name()
+        name = self.ext_handler.name
         input_dict = {
             "extensions": {}
         }
 
-        # TODO: when signing validation feature is enabled, signing information should be added in the format
-        # ext_info =
-        # { "signingInfo":
-        #       { "extensionSigned": <true, false> }
-        # }
-        ext_info = {}
+        if self.ext_handler.encoded_signature is None:
+            ext_signed = False
+        else:
+            ext_signed = True
+
+        ext_info = {
+            "signingInfo":
+                {
+                    "extensionSigned": ext_signed
+                }
+        }
         input_dict["extensions"][name] = ext_info
         return input_dict
 

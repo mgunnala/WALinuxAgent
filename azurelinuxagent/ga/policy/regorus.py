@@ -119,7 +119,7 @@ class Engine:
                 ex: "Error: Unexpected argument <arg> found."
         """
         # Write input_to_check to a temp file, because Regorus requires input to be a file path.
-        # Tempfile is automatically cleaned up at the end of with block
+        # Tempfile is automatically cleaned up at the end of the "with" block
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=True) as input_file:
             json.dump(input_to_check, input_file, indent=4)
             input_file.flush()
