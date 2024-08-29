@@ -20,7 +20,7 @@ import os
 import shutil
 
 from tests.lib.tools import AgentTestCase
-from azurelinuxagent.ga.policy.policy_engine import PolicyEngine, POLICY_SUPPORTED_DISTROS_MIN_VERSIONS, PolicyError
+from azurelinuxagent.ga.policy.policy_engine import PolicyEngine, ExtensionPolicyEngine, POLICY_SUPPORTED_DISTROS_MIN_VERSIONS, PolicyError
 from tests.lib.tools import patch, data_dir, test_dir
 
 
@@ -137,5 +137,24 @@ class TestPolicyEngine(AgentTestCase):
                         invalid_policy = os.path.join(data_dir, 'policy', "agent-extension-data-invalid.json")
                         engine = PolicyEngine(self.default_rule_path, invalid_policy)
                         engine.evaluate_query(self.input_json, "data")
+
+    def test_should_allow_extension_download(self):
+        with patch('azurelinuxagent.ga.policy.policy_engine.DISTRO_NAME', new='ubuntu'):
+            with patch('azurelinuxagent.ga.policy.policy_engine.DISTRO_VERSION', new='20.04'):
+                with patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled', return_value=True):
+                    ext_handler = Extension(name='foo')
+                    ext_handler.version = "1.2.3"
+                    self.ext_handler_instance = ExtHandlerInstance(ext_handler=ext_handler, protocol=None)
+
+                    pkg_uri = "http://bar/foo__1.2.3"
+                    self.ext_handler_instance.pkg = ExtHandlerPackage(ext_handler.version)
+                    self.ext_handler_instance.pkg.uris.append(pkg_uri)
+
+                    self.base_dir = self.tmp_dir
+                    self.extension_directory = os.path.join(self.tmp_dir, "extension_directory")
+                    self.mock_get_base_dir = patch.object(self.ext_handler_instance, "get_base_dir",
+                                                          return_value=self.extension_directory)
+                    self.mock_get_base_dir.start()
+                    engine = ExtensionPolicyEngine()
 
 # TODO: add tests for all combinations of extensions and policy parameters when ExtensionPolicyEngine() class is added

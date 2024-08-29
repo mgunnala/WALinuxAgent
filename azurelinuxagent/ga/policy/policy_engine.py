@@ -166,4 +166,60 @@ class PolicyEngine(object):
             self._log_policy(msg=msg, is_success=False)
             raise PolicyError(msg)
 
-# TODO: Implement class ExtensionPolicyEngine with API is_extension_download_allowed(ext_name) that calls evaluate_query.
+
+class ExtensionPolicyEngine(PolicyEngine):
+    def __init__(self, ext_handler):
+        """
+        This class should be called from handle_ext_handler(). The extension handler should be passed into the
+        constructor here.
+        """
+        self.ext_handler = ext_handler
+        # TODO 1: need to remove the hardcoding
+        rule_file = "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent_extension_policy_invalid.rego"
+        policy_file = self.__get_policy_file()
+        super().__init__(rule_file=rule_file, policy_file=policy_file)
+
+    def is_extension_download_allowed(self):
+        """
+        If feature is not enabled, return True.
+
+        If feature is enabled, evaluate query with extension name. Return true if extension allowed to download, else
+        return false.
+        """
+        if not self.is_policy_enforcement_enabled():
+            return True
+
+        input_to_check = self.__build_input()
+        query = "data.agent_extension_policy.extensions_to_download"
+        self.evaluate_query(input_to_check=input_to_check, query=query)
+
+    @staticmethod
+    def __get_policy_file():
+        # return either default or custom policy file
+        return "/home/manugunnala/agents/WALinuxAgent/tests/data/policy/agent_extension_policy.rego"
+
+    def __build_input(self):
+        """
+        Converts extension to input json format:
+        {
+            "extensions": {
+                "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {}
+            }
+        }
+        """
+        name = self.ext_handler.get_extension_full_name()
+        input_dict = {
+            "extensions": {}
+        }
+
+        # TODO: when signing validation feature is enabled, signing information should be added in the format
+        # ext_info =
+        # { "signingInfo":
+        #       { "extensionSigned": <true, false> }
+        # }
+        ext_info = {}
+        input_dict["extensions"][name] = ext_info
+        return input_dict
+
+
+
