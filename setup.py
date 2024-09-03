@@ -344,6 +344,9 @@ setuptools.setup(
     install_requires=requires,
     cmdclass={
         'install': install
+    },
+    package_data={
+        '': ['*.json', 'regorus', '*.rego']
     }
 )
 

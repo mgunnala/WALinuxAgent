@@ -16,6 +16,7 @@
 #
 
 import json
+import os
 import tempfile
 import azurelinuxagent.common.utils.shellutil as shellutil
 from azurelinuxagent.common.utils.shellutil import CommandError
@@ -28,8 +29,15 @@ def get_regorus_path():
     Currently, the executable is copied into the agent directory for unit testing.
     """
     # TODO: update the logic to get regorus path once executable is released as part of agent package
-    # This method is currently mocked for unit tests.
-    regorus_exe = ""
+    # TODO: make sure to chmod regorus
+    # This method is currently mocked for unit tests
+    cwd = os.getcwd()
+    if cwd is None or cwd == "" or cwd == "/":
+        import azurelinuxagent
+        cwd = os.path.dirname(azurelinuxagent.__file__)
+        regorus_exe = os.path.join(cwd, "ga/policy/regorus")
+    else:
+        regorus_exe = os.path.join(cwd, "bin/regorus")
     return regorus_exe
 
 
@@ -45,7 +53,6 @@ class Engine:
     This class implements the basic operations for the Regorus policy engine via subprocess.
     Any errors thrown in this class should be caught and handled by PolicyEngine.
     """
-
     def __init__(self, policy_file, rule_file):
         """
         Rule_file is expected to point to a valid Regorus file.

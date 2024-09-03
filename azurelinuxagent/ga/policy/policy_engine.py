@@ -15,14 +15,14 @@
 # Requires Python 2.4+ and Openssl 1.0+
 #
 
+import os
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.version import DISTRO_VERSION, DISTRO_NAME
 from azurelinuxagent.common.utils.distro_version import DistroVersion
 from azurelinuxagent.common.event import WALAEventOperation, add_event
 from azurelinuxagent.common import conf
 from azurelinuxagent.common.osutil import get_osutil
-import azurelinuxagent.ga.policy.regorus as regorus
-from azurelinuxagent.ga.policy.regorus import PolicyError
+from azurelinuxagent.ga.policy.regorus import Engine, PolicyError
 
 # Define support matrix for Regorus and policy engine feature.
 # Dict in the format: { distro:min_supported_version }
@@ -74,7 +74,7 @@ class PolicyEngine(object):
 
         # If unsupported, this call will raise an error
         self._check_policy_enforcement_supported()
-        self._engine = regorus.Engine(policy_file=policy_file, rule_file=rule_file)
+        self._engine = Engine(policy_file=policy_file, rule_file=rule_file)
 
     @classmethod
     def _log_policy(cls, msg, is_success=True, op=WALAEventOperation.Policy, send_event=True):
@@ -166,4 +166,115 @@ class PolicyEngine(object):
             self._log_policy(msg=msg, is_success=False)
             raise PolicyError(msg)
 
-# TODO: Implement class ExtensionPolicyEngine with API is_extension_download_allowed(ext_name) that calls evaluate_query.
+
+class ExtensionPolicyEngine(PolicyEngine):
+    def __init__(self, ext_handler):
+        """
+        This class should be called from handle_ext_handler(). The extension handler should be passed into the
+        constructor here.
+        """
+        self.ext_handler = ext_handler
+        # TODO: move the agent_dir logic to osutil
+        import azurelinuxagent
+        agent_dir = os.path.dirname(azurelinuxagent.__file__)
+        rule_file = os.path.join(agent_dir, "ga/policy/agent_extension_policy.rego")
+        policy_file = self.get_policy_file()
+        super().__init__(rule_file=rule_file, policy_file=policy_file)
+
+    def is_extension_download_allowed(self):
+        """
+        Evaluate query to determine if extension is allowed to download.
+        If policy feature is not enabled, we always return true.
+        Return true if downloadAllowed=true AND signatureValidated=true.
+        """
+        # If feature is disabled, return true without any rule checking.
+        if not self.is_policy_enforcement_enabled():
+            return True
+
+        extension_allowed = self.__check_allowlist_rule()
+        signing_validated = self.__check_signing_rule()
+
+        if extension_allowed and signing_validated:
+            return True
+
+        # If either rule failed, raise an error to block installation with a clear reason.
+        reasons = []
+        if not extension_allowed:
+            reasons.append("extension is not present in the allowlist")
+        signing_validated = self.__check_signing_rule()
+        if not signing_validated:
+            reasons.append("extension is not signed")
+        msg = "Extension {0} installation is blocked because {1}.".format(self.ext_handler.name,
+                                                                          ", ".join(reasons))
+        raise PolicyError(msg)
+
+    def __check_allowlist_rule(self):
+        name = self.ext_handler.name
+        input_to_check = self._build_input()
+        query = "data.agent_extension_policy.extensions_to_download"
+        result = self.evaluate_query(input_to_check=input_to_check, query=query)    # evaluate_query( ) checks for None
+        ext_result = result.get(name)
+        if ext_result is None:
+            msg = "extension {0} not found in allowlist query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+
+        is_ext_allowed = ext_result.get("downloadAllowed")
+        if is_ext_allowed is None:
+            msg = "attribute 'downloadAllowed' not found in query result. Query returned: {0}".format(result)
+            raise PolicyError(msg)
+
+        return is_ext_allowed
+
+    def __check_signing_rule(self):
+        name = self.ext_handler.name
+        input_to_check = self._build_input()
+        query = "data.agent_extension_policy.extensions_validated"
+        result = self.evaluate_query(input_to_check=input_to_check, query=query)  # evaluate_query( ) checks for None
+        ext_result = result.get(name)
+        if ext_result is None:
+            msg = "extension {0} not found in signing query result. Query returned: {1}".format(name, result)
+            raise PolicyError(msg)
+
+        is_signing_validated = ext_result.get("signingValidated")
+        if is_signing_validated is None:
+            msg = "attribute 'signingValidated' not found in query result. Query returned: {0}".format(result)
+            raise PolicyError(msg)
+
+        if not is_signing_validated:
+            msg = "extension {0} is not signed. Extension installation is blocked.".format(name)
+            raise PolicyError(msg)
+
+        return True
+
+    @staticmethod
+    def get_policy_file():
+        # return either default or custom policy file
+        return "/home/azureuser/WALinuxAgent/tests/data/policy/agent-extension-default-data.json"
+
+    def _build_input(self):
+        """
+        Converts extension to input json format:
+        {
+            "extensions": {
+                "Microsoft.Azure.ActiveDirectory.AADSSHLoginForLinux": {}
+            }
+        }
+        """
+        name = self.ext_handler.name
+        input_dict = {
+            "extensions": {}
+        }
+
+        if self.ext_handler.encoded_signature is None:
+            ext_signed = False
+        else:
+            ext_signed = True
+
+        ext_info = {
+            "signingInfo":
+                {
+                    "extensionSigned": ext_signed
+                }
+        }
+        input_dict["extensions"][name] = ext_info
+        return input_dict

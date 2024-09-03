@@ -83,6 +83,16 @@ def run(agent_family, output_directory, log):
 
     egg_name = os.path.join("bin", os.path.basename(
         glob.glob(os.path.join(bin_path, "*"))[0]))
+    policy_files = [
+        "regorus",
+        "agent-extension-default-data.json",
+        "agent_extension_policy.rego"
+    ]
+    import pdb; pdb.set_trace()
+    for file_name in policy_files:
+        src_path = os.path.join("/home/manugunnala/agents/WALinuxAgent/azurelinuxagent/ga/policy/", file_name)
+        dest_path = os.path.join(bin_path, file_name)
+        shutil.copy(src_path, dest_path)
 
     log.info("Writing {0}".format(manifest_path))
     with open(manifest_path, mode='w') as manifest:

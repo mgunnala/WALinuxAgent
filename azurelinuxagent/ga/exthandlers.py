@@ -53,6 +53,8 @@ from azurelinuxagent.common.utils import textutil
 from azurelinuxagent.common.utils.archive import ARCHIVE_DIRECTORY_NAME
 from azurelinuxagent.common.utils.flexible_version import FlexibleVersion
 from azurelinuxagent.common.version import AGENT_NAME, CURRENT_VERSION
+from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine
+
 
 _HANDLER_NAME_PATTERN = r'^([^-]+)'
 _HANDLER_VERSION_PATTERN = r'(\d+(?:\.\d+)*)'
@@ -603,6 +605,10 @@ class ExtHandlersHandler(object):
             if ext_handler_i.ext_handler.is_invalid_setting:
                 raise ExtensionsGoalStateError(ext_handler_i.ext_handler.invalid_setting_reason)
 
+            # TODO: add actual functionality here
+            # Just testing out policy functionality
+            policy_engine = ExtensionPolicyEngine(ext_handler_i.ext_handler)
+            download_allowed = policy_engine.is_extension_download_allowed()
             handler_state = ext_handler_i.ext_handler.state
 
             # The Guest Agent currently only supports 1 installed version per extension on the VM.
