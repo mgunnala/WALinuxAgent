@@ -15,14 +15,15 @@
 # Requires Python 2.4+ and Openssl 1.0+
 #
 
+import json
+import os
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.version import DISTRO_VERSION, DISTRO_NAME
 from azurelinuxagent.common.utils.distro_version import DistroVersion
 from azurelinuxagent.common.event import WALAEventOperation, add_event
 from azurelinuxagent.common import conf
 from azurelinuxagent.common.osutil import get_osutil
-import azurelinuxagent.ga.policy.regorus as regorus
-from azurelinuxagent.ga.policy.regorus import PolicyError
+from azurelinuxagent.common.exception import AgentError
 
 # Define support matrix for Regorus and policy engine feature.
 # Dict in the format: { distro:min_supported_version }
@@ -34,6 +35,31 @@ POLICY_SUPPORTED_DISTROS_MIN_VERSIONS = {
 # TODO: add 'arm64', 'aarch64' here once support is enabled for ARM64
 POLICY_SUPPORTED_ARCHITECTURE = ['x86_64']
 
+# Customer-defined policy is expected to be located at this path.
+# If there is no file at this path, default policy will be used.
+CUSTOM_POLICY_PATH = "/etc/waagent_policy.json"
+
+# Default policy to be used when no custom policy is present.
+DEFAULT_POLICY_JSON = """
+            {
+               "policyVersion": "0.1.0",
+               "extensionPolicies": {
+                   "allowListedExtensionsOnly": false,
+                   "signatureRequired": false,
+                   "signingPolicy": {},
+                   "extensions": {}
+               },
+               "jitPolicies": {}
+            }
+            """
+
+
+class PolicyError(AgentError):
+    """
+    Error raised during agent policy enforcement.
+    """
+    # TODO: split into two error classes for internal/dev errors and user errors.
+
 
 class PolicyEngine(object):
     """
@@ -41,40 +67,120 @@ class PolicyEngine(object):
     If any errors are thrown in regorus.py, they will be caught and re-raised here.
     The caller will be responsible for handling errors.
     """
-    def __init__(self, rule_file, policy_file):
-        """
-        Constructor checks that policy enforcement should be enabled, and then sets up the
-        Regorus policy engine (add rule and policy file).
-
-        rule_file: Path to a Rego file that specifies rules for policy behavior.
-
-        policy_file: Path to a JSON file that specifies parameters for policy behavior - for example,
-        whether allowlist or extension signing should be enforced.
-        The expected file format is:
-        {
-            "azureGuestAgentPolicy": {
-                "policyVersion": "0.1.0",
-                "signingRules": {
-                    "extensionSigned": <true, false>
-                },
-                "allowListOnly": <true, false>
-            },
-            "azureGuestExtensionsPolicy": {
-                "allowed_ext_1": {
-                    "signingRules": {
-                        "extensionSigned": <true, false>
-                    }
-                }
-        }
-        """
-        self._engine = None
+    def __init__(self):
+        self.policy = None
         if not self.is_policy_enforcement_enabled():
             self._log_policy(msg="Policy enforcement is not enabled.")
             return
 
         # If unsupported, this call will raise an error
         self._check_policy_enforcement_supported()
-        self._engine = regorus.Engine(policy_file=policy_file, rule_file=rule_file)
+        self.policy = self.__set_policy()
+
+    def __get_custom_policy(self):
+        """
+        Check if custom policy exists and validate policy.
+        Return None if no policy exists. Raise error if policy invalid.
+        Valid JSON file expected to be at CUSTOM_POLICY_PATH
+        The expected policy format is:
+        {
+           "policyVersion": "<x.x.x>",
+           "extensionPolicies": {
+               "allowListedExtensionsOnly": <true, false>,
+               "signatureRequired": <true, false>,
+               "signingPolicy": {},
+               "extensions": {
+                   "<extension_name>": {
+                       "signatureRequired": <true, false>,
+                       "signingPolicy": {},
+                       "runtimePolicy": {
+                           "allowedCommands": ["<cmd1>", "<cmd2>"]
+                       }
+                   }
+               }
+           },
+           "jitPolicies": {}
+        }
+        """
+        POLICY_SCHEMA = {
+            "policyVersion": str,
+            "extensionPolicies": {
+                "allowListedExtensionsOnly": bool,
+                "signatureRequired": bool,
+                "signingPolicy": dict,
+                "extensions": {
+                    # Extensions keys are dynamic, but must follow this structure
+                    "<extensionName>": {
+                        "signatureRequired": bool,
+                        "signingPolicy": dict,
+                        "runtimePolicy": dict
+                    }
+                }
+            },
+            "jitPolicies": dict
+        }
+        if os.path.exists(CUSTOM_POLICY_PATH):
+            self._log_policy("Custom policy found at {0}. Using custom policy instead of default.".format(CUSTOM_POLICY_PATH))
+            with open(CUSTOM_POLICY_PATH, 'r') as f:
+                custom_policy = json.load(f)
+                self.__validate_policy(custom_policy, POLICY_SCHEMA)
+                return custom_policy
+        else:
+            self._log_policy("No custom policy found at {0}. Using default policy.".format(CUSTOM_POLICY_PATH))
+            return None
+
+    @staticmethod
+    def __validate_policy(policy, schema):
+        """
+        Validate that the provided policy matches the schema and contains no unexpected attributes.
+        Raise ValueError if invalid attribute or type found.
+        If an attribute is missing, continue (don't raise error).
+        """
+
+        def __validate_dict(d, s):
+            """Recursively validate dictionary against the schema."""
+
+            # Check that each key in the dict is also in the schema.
+            for key, value in d.items():
+                if key not in s:
+                    raise ValueError("Unexpected attribute '{0}' found in policy file ({1}).".format(key, CUSTOM_POLICY_PATH))
+
+                schema_value = s[key]
+
+                # Extension keys can be any valid string. Handle this special case.
+                if key == "extensions":
+                    # 'extensions' should be a dict itself.
+                    if not isinstance(value, dict):
+                        raise ValueError("Invalid type '{0}' for attribute 'extensions' in policy file ({0}) Should be JSON object"
+                                         .format(type(value), CUSTOM_POLICY_PATH))
+
+                    # Validate each extension in 'extensions' against the schema.
+                    for sub_key, sub_value in value.items():
+                        if not isinstance(sub_key, str):
+                            raise ValueError("Unexpected attribute '{0}' in 'extensions' in policy file ({1}).".format(sub_key, CUSTOM_POLICY_PATH))
+                        __validate_dict(sub_value, schema_value["<extensionName>"])
+                    continue  # Skip the normal dictionary validation for this level
+
+                # If the schema value is a dictionary, recursively validate.
+                if isinstance(schema_value, dict):
+                    if isinstance(value, dict):
+                        __validate_dict(value, schema_value)
+                    else:
+                        raise ValueError(f"Invalid type for attribute '{key}' in policy. Expected dict.")
+
+                # Check type for other values
+                elif not isinstance(value, schema_value):
+                    raise ValueError(f"Invalid type for attribute '{key}' in policy. Expected {schema_value.__name__}.")
+
+        __validate_dict(policy, schema)
+
+    def __set_policy(self):
+        custom_policy = self.__get_custom_policy()
+        if custom_policy is None:
+            policy = json.loads(DEFAULT_POLICY_JSON)
+        else:
+            policy = custom_policy
+        return policy
 
     @classmethod
     def _log_policy(cls, msg, is_success=True, op=WALAEventOperation.Policy, send_event=True):
@@ -122,48 +228,31 @@ class PolicyEngine(object):
                 return  # do nothing if platform is supported
         raise PolicyError(msg)
 
-    def evaluate_query(self, input_to_check, query):
-        """
-        Input_to_check is the input we want to check against the policy engine (ex: extensions we want to install).
-        Input_to_check should be a dict. Expected format:
-        {
-            "extensions": {
-                "<extension_name_1>": {
-                    "signingInfo": {
-                        "extensionSigned": <true, false>
-                    }
-                }, ...
-        }
 
-        The query parameter specifies the value we want to retrieve from the policy engine.
-        Example format for query: "data.agent_extension_policy.extensions_to_download"
-        """
-        # This method should never be called if policy is not enabled, this would be a developer error.
+class ExtensionPolicyEngine(PolicyEngine):
+    def __init__(self, extension_to_check):
+        self.extension_to_check = extension_to_check    # each instance is tied to an extension.
+        super().__init__()
+
+    def should_allow_extension(self):
         if not self.is_policy_enforcement_enabled():
-            raise PolicyError("Policy enforcement is disabled, cannot evaluate query.")
+            return True
 
-        try:
-            full_result = self._engine.eval_query(input_to_check, query)
-            debug_info = "Rule file is located at '{0}'. \nFull query output: {1}".format(self._engine.rule_file, full_result)
-            if full_result is None or full_result == {}:
-                raise PolicyError("query returned empty output. Please validate rule file. {0}".format(debug_info))
-            result = full_result.get('result')
-            if result is None or not isinstance(result, list) or len(result) == 0:
-                raise PolicyError("query returned unexpected output with no 'result' list. Please validate rule file. {0}".format(debug_info))
-            expressions = result[0].get('expressions')
-            if expressions is None or not isinstance(expressions, list) or len(expressions) == 0:
-                raise PolicyError("query returned unexpected output with no 'expressions' list. {0}".format(debug_info))
-            value = expressions[0].get('value')
-            if value is None:
-                raise PolicyError("query returned unexpected output, 'value' not found in 'expressions' list. {0}".format(debug_info))
-            if value == {}:
-                raise PolicyError("query returned expected output format, but value is empty. Please validate policy file '{0}'. '{1}"
-                                  .format(self._engine.policy_file, debug_info))
-                # TODO: surface as a user error with clear instructions for fixing
-            return value
-        except Exception as ex:
-            msg = "Failed to evaluate query for Regorus policy engine: '{0}'".format(ex)
-            self._log_policy(msg=msg, is_success=False)
-            raise PolicyError(msg)
+        ext_policy = self.policy.get("extensionPolicies")
+        allow_listed_extension_only = ext_policy.get("allowListedExtensionsOnly")
+        extension_allowlist = ext_policy.get("extensions")
+        should_allow = not allow_listed_extension_only or extension_allowlist.get(self.extension_to_check.name) is not None
+        return should_allow
 
-# TODO: Implement class ExtensionPolicyEngine with API is_extension_download_allowed(ext_name) that calls evaluate_query.
+    def should_enforce_signature(self):
+        if not self.is_policy_enforcement_enabled():
+            return False
+
+        ext_policy = self.policy.get("extensionPolicies")
+        extension_dict = ext_policy.get("extensions")
+        global_signature_required = ext_policy.get("signatureRequired")
+        extension_individual_policy = extension_dict.get(self.extension_to_check.name)
+        if extension_individual_policy is None:
+            return global_signature_required
+        else:
+            return extension_individual_policy.get("signatureRequired")
