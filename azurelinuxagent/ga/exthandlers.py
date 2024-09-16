@@ -53,6 +53,7 @@ from azurelinuxagent.common.utils import textutil
 from azurelinuxagent.common.utils.archive import ARCHIVE_DIRECTORY_NAME
 from azurelinuxagent.common.utils.flexible_version import FlexibleVersion
 from azurelinuxagent.common.version import AGENT_NAME, CURRENT_VERSION
+from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, CUSTOM_POLICY_PATH
 
 _HANDLER_NAME_PATTERN = r'^([^-]+)'
 _HANDLER_VERSION_PATTERN = r'(\d+(?:\.\d+)*)'
@@ -620,6 +621,15 @@ class ExtHandlersHandler(object):
             # Handle everything on an extension level rather than Handler level
             ext_handler_i.logger.info("Target handler state: {0} [{1}]", handler_state, goal_state_id)
             if handler_state == ExtensionRequestedState.Enabled:
+                policy_engine = ExtensionPolicyEngine(ext_handler_i.ext_handler)
+                if not policy_engine.should_allow_extension():
+                    err_msg = "Extension {0} is disallowed by agent policy and will not be enabled or downloaded. " \
+                          "To enable, add extension to the allowed list specified in '{1}'.".format(ext_handler_i.ext_handler.name, CUSTOM_POLICY_PATH)
+                    raise ExtensionsGoalStateError(err_msg)
+                if policy_engine.should_enforce_signature() and ext_handler_i.ext_handler.encoded_signature is None:
+                    err_msg = "Extension {0} is not signed, unsigned extensions are disallowed agent policy and " \
+                               "will not be enabled or downloaded.".format(ext_handler_i.ext_handler.name)
+                    raise ExtensionsGoalStateError(err_msg)
                 self.handle_enable(ext_handler_i, extension)
             elif handler_state == ExtensionRequestedState.Disabled:
                 self.handle_disable(ext_handler_i, extension)
