@@ -35,7 +35,7 @@ class TestPolicyEngine(AgentTestCase):
                 with patch('azurelinuxagent.ga.policy.policy_engine.DISTRO_VERSION', new=version):
                     with patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled', return_value=True):
                         engine = PolicyEngine()
-                        self.assertTrue(engine.is_policy_enforcement_enabled(), "Policy should be enabled on supported distro {0} {1}".format(distro_name, version))
+                        self.assertTrue(engine.is_policy_enforcement_feature_enabled(), "Policy should be enabled on supported distro {0} {1}".format(distro_name, version))
 
     def test_should_raise_exception_when_enabling_policy_on_unsupported_distro(self):
         """Policy should NOT be enabled on unsupported distros."""
@@ -330,35 +330,45 @@ class TestExtensionPolicyEngine(AgentTestCase):
             {
                 "policyVersion": "0.1.0",
                 "extensionPolicies": {
-                    "allowListedExtensionsOnly": True,
+                    "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
                     "signatureRequired": False,
                     "signingPolicy": {},
-                    "extensions": []        # List instead of a dict - should raise error.
+                    "extensions": {}
                 },
                 "jitPolicies": {}
             }
         with open(self.custom_policy_path, mode='w') as policy_file:
             json.dump(policy, policy_file, indent=4)
             policy_file.flush()
-            with self.assertRaises(ValueError, msg="'Extensions' is an array instead of a JSON object, should raise error."):
+            with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
                 ExtensionPolicyEngine(test_extension)
 
-    #
-    # def test_should_not_raise_error_if_section_missing(self):
-    #     # TODO: decide what the expected behavior is here
-    #     test_extension = Extension(name=TEST_EXTENSION_NAME)
-    #     policy = \
-    #         {
-    #             "policyVersion": "0.1.0",
-    #             "jitPolicies": {}
-    #         }
-    #     with open(self.custom_policy_path, mode='w') as policy_file:
-    #         json.dump(policy, policy_file, indent=4)
-    #         policy_file.flush()
-    #         engine = ExtensionPolicyEngine(test_extension)
-    #         should_allow = engine.should_allow_extension()
-    #         self.assertTrue(should_allow)
+    def test_should_allow_if_extension_policy_section_missing(self):
+        test_extension = Extension(name=TEST_EXTENSION_NAME)
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "jitPolicies": {}
+            }
+        with open(self.custom_policy_path, mode='w') as policy_file:
+            json.dump(policy, policy_file, indent=4)
+            policy_file.flush()
+            engine = ExtensionPolicyEngine(test_extension)
+            should_allow = engine.should_allow_extension()
+            self.assertTrue(should_allow)
 
-    def test_if_policy_feature_disabled_allow_all(self):
-        pass
+    def test_should_allow_if_policy_disabled(self):
+        self.patcher_enabled.stop()     # Turn off the policy feature enablement
+        test_extension = Extension(name=TEST_EXTENSION_NAME)
+        engine = ExtensionPolicyEngine(test_extension)
+        should_allow = engine.should_allow_extension()
+        self.assertTrue(should_allow,
+                         msg="Policy feature is disabled, so all extensions should be allowed.")
 
+    def test_should_not_enforce_signature_if_policy_disabled(self):
+        self.patcher_enabled.stop()     # Turn off the policy feature enablement
+        test_extension = Extension(name=TEST_EXTENSION_NAME)
+        engine = ExtensionPolicyEngine(test_extension)
+        should_enforce_signature = engine.should_enforce_signature()
+        self.assertFalse(should_enforce_signature,
+                         msg="Policy feature is disabled, so signature should not be enforced.")
