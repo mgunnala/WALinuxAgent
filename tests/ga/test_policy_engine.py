@@ -36,6 +36,7 @@ class TestPolicyEngine(AgentTestCase):
                     with patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled', return_value=True):
                         engine = PolicyEngine()
                         self.assertTrue(engine.is_policy_enforcement_feature_enabled(), "Policy should be enabled on supported distro {0} {1}".format(distro_name, version))
+                        self.assertTrue(engine.is_policy_enforcement_feature_enabled(), "Policy should be enabled on supported distro {0} {1}".format(distro_name, version))
 
     def test_should_raise_exception_when_enabling_policy_on_unsupported_distro(self):
         """Policy should NOT be enabled on unsupported distros."""
@@ -331,8 +332,10 @@ class TestExtensionPolicyEngine(AgentTestCase):
                 "policyVersion": "0.1.0",
                 "extensionPolicies": {
                     "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
+                    "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
                     "signatureRequired": False,
                     "signingPolicy": {},
+                    "extensions": {}
                     "extensions": {}
                 },
                 "jitPolicies": {}
@@ -341,8 +344,22 @@ class TestExtensionPolicyEngine(AgentTestCase):
             json.dump(policy, policy_file, indent=4)
             policy_file.flush()
             with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
+            with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
                 ExtensionPolicyEngine(test_extension)
 
+    def test_should_allow_if_extension_policy_section_missing(self):
+        test_extension = Extension(name=TEST_EXTENSION_NAME)
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "jitPolicies": {}
+            }
+        with open(self.custom_policy_path, mode='w') as policy_file:
+            json.dump(policy, policy_file, indent=4)
+            policy_file.flush()
+            engine = ExtensionPolicyEngine(test_extension)
+            should_allow = engine.should_allow_extension()
+            self.assertTrue(should_allow)
     def test_should_allow_if_extension_policy_section_missing(self):
         test_extension = Extension(name=TEST_EXTENSION_NAME)
         policy = \
