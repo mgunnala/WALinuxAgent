@@ -3436,6 +3436,77 @@ class TestExtension(TestExtensionBase, HttpRequestPredicates):
             self.assertIn('[stdout]\n{0}'.format(expected), message, "The extension's stdout was not redacted correctly")
             self.assertIn('[stderr]\n{0}'.format(expected), message, "The extension's stderr was not redacted correctly")
 
+    @patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
+    @patch('azurelinuxagent.ga.policy.policy_engine.CUSTOM_POLICY_PATH', new=os.path.join(data_dir, 'policy', "waagent_policy.json"))
+    def test_should_block_extension_if_allowlist_true(self, _, *args):
+        with mock_wire_protocol(wire_protocol_data.DATA_FILE) as protocol:
+            protocol.aggregate_status = None
+            protocol.report_vm_status = MagicMock()
+            exthandlers_handler = get_exthandlers_handler(protocol)
+            policy = \
+                {
+                    "policyVersion": "0.1.0",
+                    "extensionPolicies": {
+                        "allowListedExtensionsOnly": True,
+                        "signatureRequired": False,
+                        "signingPolicy": {},
+                        "extensions": {}
+                    },
+                    "jitPolicies": {}
+                }
+            with open(os.path.join(data_dir, 'policy', "waagent_policy.json"), mode='w') as policy_file:
+                json.dump(policy, policy_file, indent=4)
+                policy_file.flush()
+                exthandlers_handler.run()
+                exthandlers_handler.report_ext_handlers_status()
+
+                report_vm_status = protocol.report_vm_status
+                self.assertTrue(report_vm_status.called)
+                args, _ = report_vm_status.call_args
+                vm_status = args[0]
+                self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
+                exthandler = vm_status.vmAgent.extensionHandlers[0]
+                self.assertEqual(-1, exthandler.code)
+                self.assertEqual('NotReady', exthandler.status)
+                self.assertEqual("Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not specified in allowlist. To enable, add extension to the allowed list specified in '/etc/waagent_policy.json'.", exthandler.message)
+
+    @patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
+    @patch('azurelinuxagent.ga.policy.policy_engine.CUSTOM_POLICY_PATH', new=os.path.join(data_dir, 'policy', "waagent_policy.json"))
+    def test_should_block_unsigned_extension_if_signature_required_true(self, _, *args):
+        # Test the case where extension does not have an encoded signature.
+        data_file = wire_protocol_data.DATA_FILE.copy()
+        data_file["ext_conf"] = "wire/ext_conf-no_encoded_signature.xml"
+        with mock_wire_protocol(data_file) as protocol:
+            protocol.aggregate_status = None
+            protocol.report_vm_status = MagicMock()
+            exthandlers_handler = get_exthandlers_handler(protocol)
+            policy = \
+                {
+                    "policyVersion": "0.1.0",
+                    "extensionPolicies": {
+                        "allowListedExtensionsOnly": False,
+                        "signatureRequired": True,
+                        "signingPolicy": {},
+                        "extensions": {}
+                    },
+                    "jitPolicies": {}
+                }
+            with open(os.path.join(data_dir, 'policy', "waagent_policy.json"), mode='w') as policy_file:
+                json.dump(policy, policy_file, indent=4)
+                policy_file.flush()
+                exthandlers_handler.run()
+                exthandlers_handler.report_ext_handlers_status()
+
+                report_vm_status = protocol.report_vm_status
+                self.assertTrue(report_vm_status.called)
+                args, _ = report_vm_status.call_args
+                vm_status = args[0]
+                self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
+                exthandler = vm_status.vmAgent.extensionHandlers[0]
+                self.assertEqual(-1, exthandler.code)
+                self.assertEqual('NotReady', exthandler.status)
+                self.assertEqual("Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not signed and policy requires signatures. To enable, ensure that extension  is signed or set signatureRequired=false in '/etc/waagent_policy.json'.", exthandler.message)
+
 
 if __name__ == '__main__':
     unittest.main()

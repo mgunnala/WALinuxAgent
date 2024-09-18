@@ -25,7 +25,6 @@ from azurelinuxagent.common import conf
 from azurelinuxagent.common.osutil import get_osutil
 from azurelinuxagent.common.exception import AgentError
 from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
-from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
 
 # Define support matrix for Regorus and policy engine feature.
 # Dict in the format: { distro:min_supported_version }
@@ -40,11 +39,6 @@ POLICY_SUPPORTED_ARCHITECTURE = ['x86_64']
 # Customer-defined policy is expected to be located at this path.
 # If there is no file at this path, default policy will be used.
 CUSTOM_POLICY_PATH = "/etc/waagent_policy.json"
-
-# Default policy values to be used when no custom policy is present.
-DEFAULT_ALLOW_LISTED_EXTENSIONS_ONLY = False
-DEFAULT_SIGNATURE_REQUIRED = False
-POLICY_SCHEMA = {
 # Default policy values to be used when no custom policy is present.
 DEFAULT_ALLOW_LISTED_EXTENSIONS_ONLY = False
 DEFAULT_SIGNATURE_REQUIRED = False
@@ -66,45 +60,15 @@ POLICY_SCHEMA = {
             "jitPolicies": dict
         }
 
-class PolicyError(AgentError):
-    """
-    Error raised during agent policy enforcement.
-    """
-    # TODO: split into two error classes for internal/dev errors and user errors.
-
-
-class PolicyEngine(object):
-    """
-    Implements base policy engine functions.
-    """
-    def __init__(self):
-        if not self.is_policy_enforcement_feature_enabled():
-            self._log_policy(msg="Policy enforcement is not enabled.")
-            return
-
-        # If unsupported, this call will raise an error
-        self._check_policy_supported_on_platform()
-        self.policy = self.__get_policy()
-
-    def __get_policy(self):
-        """
-        Check if custom policy exists at CUSTOM_POLICY_PATH, load JSON object and return as a dict.
-        Validate that no unexpected sections are present in the policy.
-        Return {} if no policy exists.
-        The expected policy format is:
-        {
-           "policyVersion": "<x.x.x>",
-           "extensionPolicies": {...},
-           "jitPolicies": {...}
-        }
-        """
 
 class PolicyError(AgentError):
     """
     Error raised during agent policy enforcement.
     """
     # TODO: split into two error classes for internal/dev errors and user errors.
-
+    def __init__(self, msg=None, inner=None, code=-1):
+        super().__init__(msg, inner)
+        self.code = code
 
 class PolicyEngine(object):
     """
@@ -133,10 +97,8 @@ class PolicyEngine(object):
         """
         if os.path.exists(CUSTOM_POLICY_PATH):
             self._log_policy("Custom policy found at {0}. Using custom policy.".format(CUSTOM_POLICY_PATH))
-            self._log_policy("Custom policy found at {0}. Using custom policy.".format(CUSTOM_POLICY_PATH))
             with open(CUSTOM_POLICY_PATH, 'r') as f:
                 custom_policy = json.load(f)
-                self.__validate_policy(custom_policy, POLICY_SCHEMA)    # Will raise ValueError if policy is invalid
                 self.__validate_policy(custom_policy, POLICY_SCHEMA)    # Will raise ValueError if policy is invalid
                 return custom_policy
         else:
@@ -144,18 +106,7 @@ class PolicyEngine(object):
             return {}
 
     def __validate_policy(self, policy, schema):
-            return {}
-
-    def __validate_policy(self, policy, schema):
         """
-        Validate policy against the provided schema. Validation is done only at the top level (we don't recurse into nested dicts).
-        If there is an attribute in the policy that is undefined in the schema or is the wrong type, raise ValueError.
-        No error will be raised if an attribute defined in schema is missing in the policy.
-        """
-        # Each key in the policy should be in the schema. Raise a ValueError if an unexpected key is found.
-        for key, value in policy.items():
-            if key not in schema:
-                raise ValueError("Unexpected attribute '{0}' found in policy file ({1}).".format(key, CUSTOM_POLICY_PATH))
         Validate policy against the provided schema. Validation is done only at the top level (we don't recurse into nested dicts).
         If there is an attribute in the policy that is undefined in the schema or is the wrong type, raise ValueError.
         No error will be raised if an attribute defined in schema is missing in the policy.
@@ -170,13 +121,8 @@ class PolicyEngine(object):
             if isinstance(schema_value, dict):
                 schema_value = dict
             if not isinstance(value, schema_value):
-                raise ValueError("Invalid type for attribute '{0}' in policy. Expected {0}.".format(key, schema_value.__name__))
-            schema_value = schema[key]
-            # We don't recursively validate the dicts
-            if isinstance(schema_value, dict):
-                schema_value = dict
-            if not isinstance(value, schema_value):
-                raise ValueError("Invalid type for attribute '{0}' in policy. Expected {0}.".format(key, schema_value.__name__))
+                raise ValueError("Invalid type for attribute '{0}' in policy. Expected {1}.".format(key, schema_value.__name__))
+
 
     @classmethod
     def _log_policy(cls, msg, is_success=True, op=WALAEventOperation.Policy, send_event=True):
@@ -192,7 +138,6 @@ class PolicyEngine(object):
 
     @staticmethod
     def is_policy_enforcement_feature_enabled():
-    def is_policy_enforcement_feature_enabled():
         """
         Check whether user has opted into policy enforcement feature.
         Caller function should check this before performing any operations.
@@ -202,7 +147,6 @@ class PolicyEngine(object):
         return conf.get_extension_policy_enabled()
 
     @staticmethod
-    def _check_policy_supported_on_platform():
     def _check_policy_supported_on_platform():
         """
         Check that both platform architecture and distro/version are supported.
@@ -229,7 +173,6 @@ class PolicyEngine(object):
 
 class ExtensionPolicyEngine(PolicyEngine):
 
-
     def __init__(self, extension_to_check):
         self.extension_to_check = extension_to_check    # each instance is tied to an extension.
         super().__init__()
@@ -255,11 +198,8 @@ class ExtensionPolicyEngine(PolicyEngine):
 
     def should_allow_extension(self):
         if not self.is_policy_enforcement_feature_enabled():
-        if not self.is_policy_enforcement_feature_enabled():
             return True
 
-        allow_listed_extension_only = self.extension_policy.get("allowListedExtensionsOnly", DEFAULT_ALLOW_LISTED_EXTENSIONS_ONLY)
-        extension_allowlist = self.extension_policy.get("extensions", {})
         allow_listed_extension_only = self.extension_policy.get("allowListedExtensionsOnly", DEFAULT_ALLOW_LISTED_EXTENSIONS_ONLY)
         extension_allowlist = self.extension_policy.get("extensions", {})
         should_allow = not allow_listed_extension_only or extension_allowlist.get(self.extension_to_check.name) is not None
@@ -267,11 +207,8 @@ class ExtensionPolicyEngine(PolicyEngine):
 
     def should_enforce_signature(self):
         if not self.is_policy_enforcement_feature_enabled():
-        if not self.is_policy_enforcement_feature_enabled():
             return False
 
-        extension_dict = self.extension_policy.get("extensions", {})
-        global_signature_required = self.extension_policy.get("signatureRequired", DEFAULT_SIGNATURE_REQUIRED)
         extension_dict = self.extension_policy.get("extensions", {})
         global_signature_required = self.extension_policy.get("signatureRequired", DEFAULT_SIGNATURE_REQUIRED)
         extension_individual_policy = extension_dict.get(self.extension_to_check.name)
@@ -283,7 +220,7 @@ class ExtensionPolicyEngine(PolicyEngine):
     def __validate_extension_policy(self, policy, schema):
         """
         Validate the "extensionPolicies" section of the policy file.
-        Note that the extension name key within "extensions" can be any valid string.
+        Note that the extension name key witin "extensions" can be any valid string.
         We add special handling for this case.
         
         Sample:
@@ -313,7 +250,7 @@ class ExtensionPolicyEngine(PolicyEngine):
                 # 'extensions' should be a dict itself.
                 if not isinstance(value, dict):
                     raise ValueError(
-                        "Invalid type '{0}' for attribute 'extensions' in policy file ({0}). Expected dict."
+                        "Invalid type '{0}' for attribute 'extensions' in policy file ({1}). Expected dict."
                         .format(type(value), CUSTOM_POLICY_PATH))
 
                 # Validate each extension in 'extensions' against the schema.
@@ -327,4 +264,4 @@ class ExtensionPolicyEngine(PolicyEngine):
 
             if not isinstance(value, schema_value):
                 raise ValueError(
-                    "Invalid type for attribute '{0}' in policy. Expected {0}.".format(key, schema_value.__name__))
+                    "Invalid type for attribute '{0}' in policy. Expected {1}.".format(key, schema_value.__name__))

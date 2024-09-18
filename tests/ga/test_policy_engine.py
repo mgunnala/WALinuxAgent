@@ -94,7 +94,7 @@ class TestExtensionPolicyEngine(AgentTestCase):
         should_allow = engine.should_allow_extension()
         self.assertTrue(should_allow, msg="Default policy should allow all extensions.")
         should_enforce = engine.should_enforce_signature()
-        self.assertTrue(not should_enforce, msg="Default policy should not enforce extension signature.")
+        self.assertFalse(should_enforce, msg="Default policy should not enforce extension signature.")
 
     def test_should_allow_if_allowListedExtensionsOnly_true_and_extension_in_list(self):
         """
@@ -332,10 +332,8 @@ class TestExtensionPolicyEngine(AgentTestCase):
                 "policyVersion": "0.1.0",
                 "extensionPolicies": {
                     "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
-                    "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
                     "signatureRequired": False,
                     "signingPolicy": {},
-                    "extensions": {}
                     "extensions": {}
                 },
                 "jitPolicies": {}
@@ -344,22 +342,8 @@ class TestExtensionPolicyEngine(AgentTestCase):
             json.dump(policy, policy_file, indent=4)
             policy_file.flush()
             with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
-            with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
                 ExtensionPolicyEngine(test_extension)
 
-    def test_should_allow_if_extension_policy_section_missing(self):
-        test_extension = Extension(name=TEST_EXTENSION_NAME)
-        policy = \
-            {
-                "policyVersion": "0.1.0",
-                "jitPolicies": {}
-            }
-        with open(self.custom_policy_path, mode='w') as policy_file:
-            json.dump(policy, policy_file, indent=4)
-            policy_file.flush()
-            engine = ExtensionPolicyEngine(test_extension)
-            should_allow = engine.should_allow_extension()
-            self.assertTrue(should_allow)
     def test_should_allow_if_extension_policy_section_missing(self):
         test_extension = Extension(name=TEST_EXTENSION_NAME)
         policy = \

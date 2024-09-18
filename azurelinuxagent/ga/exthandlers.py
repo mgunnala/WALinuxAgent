@@ -53,8 +53,7 @@ from azurelinuxagent.common.utils import textutil
 from azurelinuxagent.common.utils.archive import ARCHIVE_DIRECTORY_NAME
 from azurelinuxagent.common.utils.flexible_version import FlexibleVersion
 from azurelinuxagent.common.version import AGENT_NAME, CURRENT_VERSION
-from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, CUSTOM_POLICY_PATH
-from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, CUSTOM_POLICY_PATH
+from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, CUSTOM_POLICY_PATH, PolicyError
 
 _HANDLER_NAME_PATTERN = r'^([^-]+)'
 _HANDLER_VERSION_PATTERN = r'(\d+(?:\.\d+)*)'
@@ -606,7 +605,6 @@ class ExtHandlersHandler(object):
                 raise ExtensionsGoalStateError(ext_handler_i.ext_handler.invalid_setting_reason)
 
             handler_state = ext_handler_i.ext_handler.state
-            policy_engine = ExtensionPolicyEngine(ext_handler_i.ext_handler)
 
             # The Guest Agent currently only supports 1 installed version per extension on the VM.
             # If the extension version is unregistered and the customers wants to uninstall the extension,
@@ -625,13 +623,13 @@ class ExtHandlersHandler(object):
             if handler_state == ExtensionRequestedState.Enabled:
                 policy_engine = ExtensionPolicyEngine(ext_handler_i.ext_handler)
                 if not policy_engine.should_allow_extension():
-                    err_msg = "Extension {0} is disallowed by agent policy and will not be enabled or downloaded. " \
-                          "To enable, add extension to the allowed list specified in '{1}'.".format(ext_handler_i.ext_handler.name, CUSTOM_POLICY_PATH)
-                    raise ExtensionsGoalStateError(err_msg)
+                    err_msg = "extension is not specified in allowlist. To enable, add extension to the allowed list " \
+                               "specified in '{0}'.".format(CUSTOM_POLICY_PATH)
+                    raise PolicyError(err_msg)
                 if policy_engine.should_enforce_signature() and ext_handler_i.ext_handler.encoded_signature is None:
-                    err_msg = "Extension {0} is not signed, unsigned extensions are disallowed agent policy and " \
-                               "will not be enabled or downloaded.".format(ext_handler_i.ext_handler.name)
-                    raise ExtensionsGoalStateError(err_msg)
+                    err_msg = "extension is not signed and policy requires signatures. To enable, ensure that extension " \
+                            " is signed or set signatureRequired=false in '{0}'.".format(CUSTOM_POLICY_PATH)
+                    raise PolicyError(err_msg)
                 self.handle_enable(ext_handler_i, extension)
             elif handler_state == ExtensionRequestedState.Disabled:
                 self.handle_disable(ext_handler_i, extension)
@@ -665,8 +663,22 @@ class ExtHandlersHandler(object):
                                                         report=False, extension=extension)
         except ExtensionDownloadError as error:
             msg = "Failed to download artifacts: {0}".format(ustr(error))
+
             self.__handle_and_report_ext_handler_errors(ext_handler_i, error, report_op=WALAEventOperation.Download,
                                                         message=msg, extension=extension)
+        except PolicyError as error:
+            # If extension is blocked, we don't process it. But CRP is still waiting for status, so we will report
+            # status here with an error message.
+            msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: {0}".format(ustr(error))
+            self.__handle_and_report_ext_handler_errors(ext_handler_i, error, report_op=WALAEventOperation.Enable, message=msg,
+                                                        extension=extension)
+            add_event(op=WALAEventOperation.Enable, message=msg)
+            ext_handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
+            ext_handler_i.create_status_file_if_not_exist(extension,
+                                                      status=ExtensionStatusValue.error,
+                                                      code=-1,
+                                                      operation=ext_handler_i.operation,
+                                                      message=msg)
         except ExtensionError as error:
             self.__handle_and_report_ext_handler_errors(ext_handler_i, error, ext_handler_i.operation, ustr(error),
                                                         extension=extension)
@@ -996,7 +1008,7 @@ class ExtHandlersHandler(object):
         # extension even if HandlerState == NotInstalled (Sample scenario: ExtensionsGoalStateError, DecideVersionError, etc)
         # We also need to report extension status for an uninstalled handler if extensions are disabled because CRP
         # waits for extension runtime status before failing the extension operation.
-        if handler_state != ExtHandlerState.NotInstalled or ext_handler.supports_multi_config or not conf.get_extensions_enabled():
+        if handler_state != ExtHandlerState.NotInstalled or ext_handler.supports_multi_config or not conf.get_extensions_enabled() or conf.get_extension_policy_enabled():
 
             # Since we require reading the Manifest for reading the heartbeat, this would fail if HandlerManifest not found.
             # Only try to read heartbeat if HandlerState != NotInstalled.
