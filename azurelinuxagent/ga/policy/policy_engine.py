@@ -24,7 +24,7 @@ from azurelinuxagent.common.event import WALAEventOperation, add_event
 from azurelinuxagent.common import conf
 from azurelinuxagent.common.osutil import get_osutil
 from azurelinuxagent.common.exception import AgentError
-from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
+# from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
 
 # Define support matrix for Regorus and policy engine feature.
 # Dict in the format: { distro:min_supported_version }
@@ -67,7 +67,7 @@ class PolicyError(AgentError):
     """
     # TODO: split into two error classes for internal/dev errors and user errors.
     def __init__(self, msg=None, inner=None, code=-1):
-        super().__init__(msg, inner)
+        super(PolicyError, self).__init__(msg, inner)
         self.code = code
 
 class PolicyEngine(object):
@@ -107,7 +107,8 @@ class PolicyEngine(object):
 
     def __validate_policy(self, policy, schema):
         """
-        Validate policy against the provided schema. Validation is done only at the top level (we don't recurse into nested dicts).
+        Validate policy against the provided schema.
+        We vValidation is done only at the top level (we don't recurse into nested dicts).
         If there is an attribute in the policy that is undefined in the schema or is the wrong type, raise ValueError.
         No error will be raised if an attribute defined in schema is missing in the policy.
         """
@@ -175,7 +176,7 @@ class ExtensionPolicyEngine(PolicyEngine):
 
     def __init__(self, extension_to_check):
         self.extension_to_check = extension_to_check    # each instance is tied to an extension.
-        super().__init__()
+        super(ExtensionPolicyEngine, self).__init__()
         if not self.is_policy_enforcement_feature_enabled():
             return
 

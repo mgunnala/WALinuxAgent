@@ -673,12 +673,12 @@ class ExtHandlersHandler(object):
             self.__handle_and_report_ext_handler_errors(ext_handler_i, error, report_op=WALAEventOperation.Enable, message=msg,
                                                         extension=extension)
             add_event(op=WALAEventOperation.Enable, message=msg)
-            ext_handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
-            ext_handler_i.create_status_file_if_not_exist(extension,
-                                                      status=ExtensionStatusValue.error,
-                                                      code=-1,
-                                                      operation=ext_handler_i.operation,
-                                                      message=msg)
+            # ext_handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
+            # ext_handler_i.create_status_file_if_not_exist(extension,
+            #                                           status=ExtensionStatusValue.error,
+            #                                           code=-1,
+            #                                           operation=ext_handler_i.operation,
+            #                                           message=msg)
         except ExtensionError as error:
             self.__handle_and_report_ext_handler_errors(ext_handler_i, error, ext_handler_i.operation, ustr(error),
                                                         extension=extension)
