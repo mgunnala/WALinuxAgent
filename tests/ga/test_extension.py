@@ -3466,9 +3466,14 @@ class TestExtension(TestExtensionBase, HttpRequestPredicates):
                 vm_status = args[0]
                 self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
                 exthandler = vm_status.vmAgent.extensionHandlers[0]
+                expected_msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not specified in allowlist. To enable, add extension to the allowed list specified in '/etc/waagent_policy.json'."
                 self.assertEqual(-1, exthandler.code)
                 self.assertEqual('NotReady', exthandler.status)
-                self.assertEqual("Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not specified in allowlist. To enable, add extension to the allowed list specified in '/etc/waagent_policy.json'.", exthandler.message)
+                self.assertEqual(expected_msg, exthandler.message)
+                ext_status = exthandler.extension_status
+                self.assertEqual(-1, ext_status.code)
+                self.assertEqual('error', ext_status.status)
+                self.assertEqual(expected_msg, ext_status.message)
 
     @patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
     @patch('azurelinuxagent.ga.policy.policy_engine.CUSTOM_POLICY_PATH', new=os.path.join(data_dir, 'policy', "waagent_policy.json"))
@@ -3503,10 +3508,14 @@ class TestExtension(TestExtensionBase, HttpRequestPredicates):
                 vm_status = args[0]
                 self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
                 exthandler = vm_status.vmAgent.extensionHandlers[0]
+                expected_msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not signed and policy requires signatures. To enable, ensure that extension  is signed or set signatureRequired=false in '/etc/waagent_policy.json'."
                 self.assertEqual(-1, exthandler.code)
                 self.assertEqual('NotReady', exthandler.status)
-                self.assertEqual("Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not signed and policy requires signatures. To enable, ensure that extension  is signed or set signatureRequired=false in '/etc/waagent_policy.json'.", exthandler.message)
-
+                self.assertEqual(expected_msg, exthandler.message)
+                ext_status = exthandler.extension_status
+                self.assertEqual(-1, ext_status.code)
+                self.assertEqual('error', ext_status.status)
+                self.assertEqual(expected_msg, ext_status.message)
 
 if __name__ == '__main__':
     unittest.main()

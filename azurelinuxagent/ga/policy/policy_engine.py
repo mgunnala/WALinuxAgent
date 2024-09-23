@@ -24,7 +24,7 @@ from azurelinuxagent.common.event import WALAEventOperation, add_event
 from azurelinuxagent.common import conf
 from azurelinuxagent.common.osutil import get_osutil
 from azurelinuxagent.common.exception import AgentError
-# from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
+from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
 
 # Define support matrix for Regorus and policy engine feature.
 # Dict in the format: { distro:min_supported_version }
@@ -70,6 +70,7 @@ class PolicyError(AgentError):
         super(PolicyError, self).__init__(msg, inner)
         self.code = code
 
+
 class PolicyEngine(object):
     """
     Implements base policy engine functions.
@@ -86,44 +87,32 @@ class PolicyEngine(object):
     def __get_policy(self):
         """
         Check if custom policy exists at CUSTOM_POLICY_PATH, load JSON object and return as a dict.
-        Validate that no unexpected sections are present in the policy.
         Return {} if no policy exists.
         The expected policy format is:
-        {
-           "policyVersion": "<x.x.x>",
-           "extensionPolicies": {...},
-           "jitPolicies": {...}
+         {
+            "policyVersion": str,
+            "extensionPolicies": {
+                "allowListedExtensionsOnly": bool,
+                "signatureRequired": bool,
+                "signingPolicy": dict,
+                "extensions": {
+                    "<extensionName>": {
+                        "signatureRequired": bool,
+                        "signingPolicy": dict,
+                        "runtimePolicy": dict
+                    }
+                }
+            }
         }
         """
         if os.path.exists(CUSTOM_POLICY_PATH):
             self._log_policy("Custom policy found at {0}. Using custom policy.".format(CUSTOM_POLICY_PATH))
             with open(CUSTOM_POLICY_PATH, 'r') as f:
                 custom_policy = json.load(f)
-                self.__validate_policy(custom_policy, POLICY_SCHEMA)    # Will raise ValueError if policy is invalid
                 return custom_policy
         else:
             self._log_policy("No custom policy found at {0}. Using default policy.".format(CUSTOM_POLICY_PATH))
             return {}
-
-    def __validate_policy(self, policy, schema):
-        """
-        Validate policy against the provided schema.
-        We vValidation is done only at the top level (we don't recurse into nested dicts).
-        If there is an attribute in the policy that is undefined in the schema or is the wrong type, raise ValueError.
-        No error will be raised if an attribute defined in schema is missing in the policy.
-        """
-        # Each key in the policy should be in the schema. Raise a ValueError if an unexpected key is found.
-        for key, value in policy.items():
-            if key not in schema:
-                raise ValueError("Unexpected attribute '{0}' found in policy file ({1}).".format(key, CUSTOM_POLICY_PATH))
-
-            schema_value = schema[key]
-            # We don't recursively validate the dicts
-            if isinstance(schema_value, dict):
-                schema_value = dict
-            if not isinstance(value, schema_value):
-                raise ValueError("Invalid type for attribute '{0}' in policy. Expected {1}.".format(key, schema_value.__name__))
-
 
     @classmethod
     def _log_policy(cls, msg, is_success=True, op=WALAEventOperation.Policy, send_event=True):
@@ -182,19 +171,6 @@ class ExtensionPolicyEngine(PolicyEngine):
 
         self.extension_policy = {}
         if self.policy is not None and self.policy.get("extensionPolicies") is not None:
-            extension_policy_schema = {
-                "allowListedExtensionsOnly": bool,
-                "signatureRequired": bool,
-                "signingPolicy": dict,
-                "extensions": {
-                    "<extensionName>": {
-                        "signatureRequired": bool,
-                        "signingPolicy": dict,
-                        "runtimePolicy": dict
-                    }
-                }
-            }
-            self.__validate_extension_policy(self.policy.get("extensionPolicies"), extension_policy_schema)
             self.extension_policy = self.policy.get("extensionPolicies")
 
     def should_allow_extension(self):
@@ -202,6 +178,10 @@ class ExtensionPolicyEngine(PolicyEngine):
             return True
 
         allow_listed_extension_only = self.extension_policy.get("allowListedExtensionsOnly", DEFAULT_ALLOW_LISTED_EXTENSIONS_ONLY)
+        if not isinstance(allow_listed_extension_only, bool):
+            raise ValueError("Invalid type {0} for attribute 'allowListedExtensionsOnly' in policy. Expected bool"
+                             .format(type(allow_listed_extension_only).__name__))
+
         extension_allowlist = self.extension_policy.get("extensions", {})
         should_allow = not allow_listed_extension_only or extension_allowlist.get(self.extension_to_check.name) is not None
         return should_allow
@@ -212,57 +192,15 @@ class ExtensionPolicyEngine(PolicyEngine):
 
         extension_dict = self.extension_policy.get("extensions", {})
         global_signature_required = self.extension_policy.get("signatureRequired", DEFAULT_SIGNATURE_REQUIRED)
+        if not isinstance(global_signature_required, bool):
+            raise ValueError("Invalid type {0} for attribute 'signatureRequired' in policy. Expected bool"
+                             .format(type(global_signature_required).__name__))
         extension_individual_policy = extension_dict.get(self.extension_to_check.name)
         if extension_individual_policy is None:
             return global_signature_required
         else:
+            individual_signature_required = extension_individual_policy.get("signatureRequired", DEFAULT_SIGNATURE_REQUIRED)
+            if not isinstance(individual_signature_required, bool):
+                raise ValueError("Invalid type {0} for attribute 'signatureRequired' in policy. Expected bool"
+                                 .format(type(individual_signature_required).__name__))
             return extension_individual_policy.get("signatureRequired", DEFAULT_SIGNATURE_REQUIRED)
-
-    def __validate_extension_policy(self, policy, schema):
-        """
-        Validate the "extensionPolicies" section of the policy file.
-        Note that the extension name key witin "extensions" can be any valid string.
-        We add special handling for this case.
-        
-        Sample:
-           "extensionPolicies": {
-               "allowListedExtensionsOnly": <true, false>,
-               "signatureRequired": <true, false>,
-               "signingPolicy": {},
-               "extensions": {
-                   "<extension_name>": {
-                       "signatureRequired": <true, false>,
-                       "signingPolicy": {},
-                       "runtimePolicy": {
-                           "allowedCommands": ["<cmd1>", "<cmd2>"]
-                       }
-                   }
-               }
-           }
-        """
-        # Each key in the policy should be in the schema. Raise a ValueError if an unexpected key is found.
-        for key, value in policy.items():
-            if key not in schema:
-                raise ValueError(
-                    "Unexpected attribute '{0}' found in policy file ({1}).".format(key, CUSTOM_POLICY_PATH))
-
-            schema_value = schema[key]
-            if key == "extensions":
-                # 'extensions' should be a dict itself.
-                if not isinstance(value, dict):
-                    raise ValueError(
-                        "Invalid type '{0}' for attribute 'extensions' in policy file ({1}). Expected dict."
-                        .format(type(value), CUSTOM_POLICY_PATH))
-
-                # Validate each extension in 'extensions' against the schema.
-                for sub_key, sub_value in value.items():
-                    if not isinstance(sub_key, str):
-                        raise ValueError(
-                            "Unexpected attribute '{0}' in 'extensions' in policy file ({1}).".format(sub_key,
-                                                                                                      CUSTOM_POLICY_PATH))
-                    self.__validate_extension_policy(sub_value, schema_value["<extensionName>"])
-                continue  # Skip the normal dictionary validation for this level
-
-            if not isinstance(value, schema_value):
-                raise ValueError(
-                    "Invalid type for attribute '{0}' in policy. Expected {1}.".format(key, schema_value.__name__))

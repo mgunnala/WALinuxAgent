@@ -306,43 +306,64 @@ class TestExtensionPolicyEngine(AgentTestCase):
         should_allow = engine.should_allow_extension()
         self.assertTrue(should_allow, msg="No custom policy is present, so use default policy. Should allow all extensions.")
 
-    def test_should_raise_error_if_custom_policy_contains_unexpected_attribute(self):
-        test_extension = Extension(name=TEST_EXTENSION_NAME)
-        policy = \
-            {
-                "policyVersion": "0.1.0",
-                "extentionPolicies": {       # Note that this attribute is misspelled.
-                    "allowListedExtensionsOnly": True,
-                    "signatureRequired": False,
-                    "signingPolicy": {},
-                    "extensions": {}
-                },
-                "jitPolicies": {}
-            }
-        with open(self.custom_policy_path, mode='w') as policy_file:
-            json.dump(policy, policy_file, indent=4)
-            policy_file.flush()
-            with self.assertRaises(ValueError, msg="'extentionPolicies' is an unexpected attribute, should raise an error."):
-                ExtensionPolicyEngine(test_extension)
-
-    def test_should_raise_error_if_custom_policy_contains_invalid_type(self):
+    def test_should_raise_error_if_allowListedExtensionsOnly_is_string(self):
         test_extension = Extension(name=TEST_EXTENSION_NAME)
         policy = \
             {
                 "policyVersion": "0.1.0",
                 "extensionPolicies": {
-                    "allowListedExtensionsOnly": "True",    # String instead of boolean, should raise error.
+                    "allowListedExtensionsOnly": "True",    # Should be bool
                     "signatureRequired": False,
                     "signingPolicy": {},
                     "extensions": {}
                 },
                 "jitPolicies": {}
             }
+
         with open(self.custom_policy_path, mode='w') as policy_file:
             json.dump(policy, policy_file, indent=4)
             policy_file.flush()
             with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
-                ExtensionPolicyEngine(test_extension)
+                engine = ExtensionPolicyEngine(test_extension)
+                engine.should_allow_extension()
+
+    def test_should_raise_error_if_signatureRequired_is_string(self):
+        test_extension = Extension(name=TEST_EXTENSION_NAME)
+        policy_individual = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "signingPolicy": {},
+                    "extensions": {
+                        TEST_EXTENSION_NAME: {
+                            "signatureRequired": "False",  # Should be bool
+                            "signingPolicy": {},
+                            "runtimePolicy": {}
+                        }
+                    }
+                },
+                "jitPolicies": {}
+            }
+        policy_global = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": "False",     # Should be bool
+                    "signingPolicy": {},
+                    "extensions": {}
+                },
+                "jitPolicies": {}
+            }
+        for policy in [policy_individual, policy_global]:
+            with open(self.custom_policy_path, mode='w') as policy_file:
+                json.dump(policy, policy_file, indent=4)
+                policy_file.flush()
+                with self.assertRaises(ValueError, msg="String used instead of boolean, should raise error."):
+                    engine = ExtensionPolicyEngine(test_extension)
+                    engine.should_enforce_signature()
 
     def test_should_allow_if_extension_policy_section_missing(self):
         test_extension = Extension(name=TEST_EXTENSION_NAME)
