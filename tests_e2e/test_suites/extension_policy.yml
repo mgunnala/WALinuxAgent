@@ -4,5 +4,5 @@
 name: "ExtensionPolicy"
 tests:
   - "extension_policy/extension_policy.py"
-images: "ubuntu_2004"
+images: "ubuntu_2204"
 owns_vm: true

@@ -16,22 +16,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-#
-# This test disables extension processing on waagent.conf and verifies that extensions are not processed, but the
-# agent continues reporting status.
-#
-
-import datetime
 import json
 
+from tests_e2e.tests.lib.agent_test import AgentVmTest
+from tests_e2e.tests.lib.agent_test_context import AgentVmTestContext
+from tests_e2e.tests.lib.logging import log
+from tests_e2e.tests.lib.shell import CommandError
+from tests_e2e.tests.lib.ssh_client import SshClient
+import datetime
 import pytz
 import uuid
 
 from assertpy import assert_that, fail
 from typing import Any
-from pathlib import Path
-
 
 from azure.mgmt.compute.models import VirtualMachineInstanceView
 
@@ -41,135 +38,170 @@ from tests_e2e.tests.lib.logging import log
 from tests_e2e.tests.lib.ssh_client import SshClient
 from tests_e2e.tests.lib.virtual_machine_extension_client import VirtualMachineExtensionClient
 
-
-
 class ExtensionPolicy(AgentVmTest):
+    """
+    """
     class TestCase:
         def __init__(self, extension: VirtualMachineExtensionClient, settings: Any):
             self.extension = extension
             self.settings = settings
 
+    def __init__(self, context: AgentVmTestContext):
+        super().__init__(context)
+        self._ssh_client: SshClient = self._context.create_ssh_client()
+
+    def check_agent_log_contains(self, data, assertion):
+        try:
+            self._ssh_client.run_command("grep \"{0}\" /var/log/waagent.log".format(data))
+        except CommandError:
+            fail("{0}".format(assertion))
+
+    def _create_policy_file(self, policy):
+        with open("waagent_policy.json", mode='w') as policy_file:
+            json.dump(policy, policy_file, indent=4)
+            policy_file.flush()
+
+            remote_path = "/tmp/waagent_policy.json"
+            local_path = policy_file.name
+            self._ssh_client.copy_to_node(local_path=local_path, remote_path=remote_path)
+            policy_file_final_dest = "/etc/waagent_policy.json"
+            log.info("Copying policy file to test VM [%s]", self._context.vm.name)
+            self._ssh_client.run_command(f"mv {remote_path} {policy_file_final_dest}", use_sudo=True)
+
+    def _enable_should_succeed(self, extension_case):
+        log.info(f"Enabling {extension_case.extension.__str__()} - should succeed.")
+        try:
+            extension_case.extension.enable(settings=extension_case.settings, force_update=True, timeout=15 * 60)
+            log.info(f"Enable operation for {extension_case.extension.__str__()} succeeded as expected.")
+        except Exception as error:
+            fail(
+                f"Unexpected error while processing {extension_case.extension.__str__()}. Should be enabled successfully "
+                f"because it is allowed by policy. Error: {error}")
+
+    def _enable_should_fail(self, extension_case):
+        log.info(f"Enabling {extension_case.extension.__str__()} - should fail.")
+        try:
+            extension_case.extension.enable(settings=extension_case.settings, force_update=True, timeout=6 * 60)
+            fail(f"The agent should have reported an error trying to enable {extension_case.extension.__str__()} "
+                 f"because it is disallowed by policy.")
+        except Exception as error:
+            assert_that("VMExtensionProvisioningError" in str(error)) \
+                .described_as(f"Expected a VMExtensionProvisioningError error, but actual error was: {error}") \
+                .is_true()
+            assert_that("Extension is disallowed by agent policy and will not be processed: extension is not specified in allowlist." in str(error)) \
+                .described_as(
+                f"Error message should communicate that extension is disallowed by policy, but actual error "
+                f"was: {error}").is_true()
+            log.info("Extension processing failed as expected")
+
+    def _delete_should_succeed(self, extension_case):
+        log.info("Delete - should succeed.")
+        try:
+            extension_case.extension.delete(timeout=15 * 60)
+            log.info("Delete processing for {0} succeeded as expected".format(extension_case.extension.__str__()))
+        except Exception as error:
+            fail(
+                f"Unexpected error while processing {extension_case.extension.__str__()}. Should delete successfully because it "
+                f"is in the allowlist. {error}")
+
+    def _delete_should_fail(self, extension_case):
+        log.info(f"Deleting {extension_case.extension.__str__()} - should fail.")
+        try:
+            extension_case.extension.delete(timeout=6 * 60)
+            fail(f"The agent should have reported an error trying to delete {extension_case.extension.__str__()} "
+                 f"because it is disallowed by policy.")
+        except Exception as error:
+            assert_that("VMExtensionProvisioningError" in str(error)) \
+                .described_as(f"Expected a VMExtensionProvisioningError error, but actual error was: {error}") \
+                .is_true()
+            assert_that(
+                "Extension is disallowed by agent policy and will not be processed: extension is not specified in allowlist." in str(
+                    error)) \
+                .described_as(
+                f"Error message should communicate that extension is disallowed by policy, but actual error "
+                f"was: {error}").is_true()
+            log.info("Extension processing failed as expected")
+
     def run(self):
-        ssh_client: SshClient = self._context.create_ssh_client()
 
-        # define policy
-        # copy policy to tmp folder
-        # move from tmp folder to regular expected location
-
-        # test cases
-        # - install allowlisted extension
-        # - install disallowed extension - validate fail fast and status message
-        # - block dependency and validate that dependent extension also fails
-        # - 
-        #
-        # policy = \
-        #     {
-        #         "policyVersion": "0.1.0",
-        #         "extensionPolicies": {
-        #             "allowListedExtensionsOnly": True,
-        #             "signatureRequired": False,
-        #             "extensions": {}
-        #         }
-        #     }
-        # with open("waagent_policy.json", mode='w') as policy_file:
-        #     json.dump(policy, policy_file, indent=4)
-        #     policy_file.flush()
-        #
-        #     remote_path = Path("/etc/waagent_policy.json")
-        #     local_path = Path(policy_file.name)
-        #     ssh_client.copy_to_node(local_path=local_path, remote_path=remote_path)
-        #     # output = ssh_client.run_command(f"echo '{policy_str}' > {policy_path}", use_sudo=True)
-
-
-        # Enable policy enforcement via conf file and place policy file in correct location.
-        log.info("")
-        log.info("Disabling extension processing on the test VM [%s]", self._context.vm.name)
-        output = ssh_client.run_command("update-waagent-conf Extensions.Enabled=n", use_sudo=True)
-        log.info("Disable completed:\n%s", output)
-        disabled_timestamp: datetime.datetime = datetime.datetime.utcnow() - datetime.timedelta(minutes=60)
-
-        # Prepare test cases
+        # Prepare extensions to test
         unique = str(uuid.uuid4())
         test_file = f"waagent-test.{unique}"
-        test_cases = [
-            ExtensionPolicy.TestCase(
-                VirtualMachineExtensionClient(self._context.vm, VmExtensionIds.CustomScript,
-                                              resource_name="CustomScript"),
-                {'commandToExecute': f"echo '{unique}' > /tmp/{test_file}"}
-            ),
-            ExtensionPolicy.TestCase(
-                VirtualMachineExtensionClient(self._context.vm, VmExtensionIds.RunCommandHandler,
-                                              resource_name="RunCommandHandler"),
-                {'source': {'script': f"echo '{unique}' > /tmp/{test_file}"}}
-            )
-        ]
+        custom_script = ExtensionPolicy.TestCase(
+            VirtualMachineExtensionClient(self._context.vm, VmExtensionIds.CustomScript,
+                                          resource_name="CustomScript"),
+            {'commandToExecute': f"echo '{unique}' > /tmp/{test_file}"}
+        )
+        run_command = ExtensionPolicy.TestCase(
+            VirtualMachineExtensionClient(self._context.vm, VmExtensionIds.RunCommandHandler,
+                                          resource_name="RunCommandHandler"),
+            {'source': {'script': f"echo '{unique}' > /tmp/{test_file}"}}
+        )
 
-        for t in test_cases:
-            log.info("")
-            log.info("Test case: %s", t.extension)
-            #
-            # Validate that the agent is not processing extensions by attempting to enable extension & checking that
-            # provisioning fails fast
-            #
-            log.info(
-                "Executing {0}; the agent should report a VMExtensionProvisioningError without processing the extension"
-                .format(t.extension.__str__()))
+        # Enable policy via conf
+        log.info("Enabling policy via conf file on the test VM [%s]", self._context.vm.name)
+        self._ssh_client.run_command("update-waagent-conf Debug.EnableExtensionPolicy=y", use_sudo=True)
 
-            try:
-                t.extension.enable(settings=t.settings, force_update=True, timeout=6 * 60)
-                fail("The agent should have reported an error processing the goal state")
-            except Exception as error:
-                assert_that("VMExtensionProvisioningError" in str(error)) \
-                    .described_as(f"Expected a VMExtensionProvisioningError error, but actual error was: {error}") \
-                    .is_true()
-                assert_that("Extension will not be processed since extension processing is disabled" in str(error)) \
-                    .described_as(
-                    f"Error message should communicate that extension will not be processed, but actual error "
-                    f"was: {error}").is_true()
-                log.info("Goal state processing for {0} failed as expected".format(t.extension.__str__()))
+        # allow list true and custom script in allowlist
+        # custom script enable should succeed, run command enable should fail.
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "extensions": {
+                        "Microsoft.Azure.Extensions.CustomScript": {}
+                    }
+                }
+            }
+        self._create_policy_file(policy)
+        self._enable_should_fail(run_command)
+        self._enable_should_succeed(custom_script)
 
-            #
-            # Validate the agent did not process the extension by checking it did not execute the extension settings
-            #
-            output = ssh_client.run_command("dir /tmp", use_sudo=True)
-            assert_that(output) \
-                .described_as(
-                f"Contents of '/tmp' on test VM contains {test_file}. Contents: {output}. \n This indicates "
-                f"{t.extension.__str__()} was unexpectedly processed") \
-                .does_not_contain(f"{test_file}")
-            log.info("The agent did not process the extension settings for {0} as expected".format(t.extension.__str__()))
+        # Set allowlist to false and try to install run command again
+        # Then, try to delete it - should be allowed.
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": False,
+                    "signatureRequired": False,
+                    "extensions": {}
+                }
+            }
+        self._create_policy_file(policy)
+        self._enable_should_succeed(run_command)
+        self._delete_should_succeed(run_command)
 
-        #
-        # Validate that the agent continued reporting status even if it is not processing extensions
-        #
-        log.info("")
-        instance_view: VirtualMachineInstanceView = self._context.vm.get_instance_view()
-        log.info("Instance view of VM Agent:\n%s", instance_view.vm_agent.serialize())
-        assert_that(instance_view.vm_agent.statuses).described_as("The VM agent should have exactly 1 status").is_length(1)
-        assert_that(instance_view.vm_agent.statuses[0].display_status).described_as("The VM Agent should be ready").is_equal_to('Ready')
-        # The time in the status is time zone aware and 'disabled_timestamp' is not; we need to make the latter time zone aware before comparing them
-        assert_that(instance_view.vm_agent.statuses[0].time)\
-            .described_as("The VM Agent should be have reported status even after extensions were disabled")\
-            .is_greater_than(pytz.utc.localize(disabled_timestamp))
-        log.info("The VM Agent reported status after extensions were disabled, as expected.")
+        # Disallow custom script and try to uninstall - should fail.
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "extensions": {}
+                }
+            }
+        self._create_policy_file(policy)
 
-        #
-        # Validate that the agent processes extensions after re-enabling extension processing
-        #
-        log.info("")
-        log.info("Enabling extension processing on the test VM [%s]", self._context.vm.name)
-        output = ssh_client.run_command("update-waagent-conf Extensions.Enabled=y", use_sudo=True)
-        log.info("Enable completed:\n%s", output)
+        # Known issue - this will not fail fast because we are not passing any settings here
+        # We end up creating a handler status but not an extension status, so we don't fail fast
+        # self._delete_should_fail(custom_script)
 
-        for t in test_cases:
-            try:
-                log.info("")
-                log.info("Executing {0}; the agent should process the extension".format(t.extension.__str__()))
-                t.extension.enable(settings=t.settings, force_update=True, timeout=15 * 60)
-                log.info("Goal state processing for {0} succeeded as expected".format(t.extension.__str__()))
-            except Exception as error:
-                fail(f"Unexpected error while processing {t.extension.__str__()} after re-enabling extension "
-                     f"processing: {error}")
+        # Test the multiconfig scenario - attempt to enable two instances of run command, both should fail.
+        # We don't allow run command - both should fail
+        # Try to enable two instances of run command
+        unique2 = str(uuid.uuid4())
+        test_file2 = f"waagent-test.{unique2}"
+        run_command_2 = ExtensionPolicy.TestCase(
+            VirtualMachineExtensionClient(self._context.vm, VmExtensionIds.RunCommandHandler,
+                                          resource_name="RunCommandHandler2"),
+            {'source': {'script': f"echo '{unique2}' > /tmp/{test_file2}"}}
+        )
+        self._enable_should_fail(run_command)
+        self._enable_should_fail(run_command_2)
 
 
 if __name__ == "__main__":

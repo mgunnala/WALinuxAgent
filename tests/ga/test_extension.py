@@ -3436,6 +3436,7 @@ class TestExtension(TestExtensionBase, HttpRequestPredicates):
             self.assertIn('[stdout]\n{0}'.format(expected), message, "The extension's stdout was not redacted correctly")
             self.assertIn('[stderr]\n{0}'.format(expected), message, "The extension's stderr was not redacted correctly")
 
+
 class TestExtensionHandlerManifest(AgentTestCase):
 
     def setUp(self):
@@ -3506,24 +3507,31 @@ class TestExtensionHandlerManifest(AgentTestCase):
                 self.assertIn("'continueOnUpdateFailure' has a non-boolean value", kw_messages[1]['message'])
                 self.assertIn("'supportsMultipleExtensions' has a non-boolean value", kw_messages[2]['message'])
 
-    @patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
-    @patch('azurelinuxagent.ga.policy.policy_engine._CUSTOM_POLICY_PATH', new=os.path.join(data_dir, 'ga', "waagent_policy.json"))
-    def test_should_block_extension_if_allowlist_true(self, _, *args):
+
+class TestExtensionPolicy(TestExtensionBase):
+    @classmethod
+    def setUpClass(cls):
+        AgentTestCase.setUpClass()
+        cls.test_policy_path = os.path.join(data_dir, 'ga', "waagent_policy.json")
+        cls.patch_conf_flag = patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
+        cls.patch_conf_flag.start()
+        cls.patch_custom_policy_path = patch('azurelinuxagent.ga.policy.policy_engine._CUSTOM_POLICY_PATH', new=cls.test_policy_path)
+        cls.patch_2 = patch('azurelinuxagent.ga.exthandlers._CUSTOM_POLICY_PATH', new=cls.test_policy_path)
+        cls.patch_2.start()
+        cls.patch_custom_policy_path.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        patch.stopall()
+
+    def _test_policy(self, policy, expected_handler_status_code=None, expected_handler_status=None,
+                     expected_handler_status_msg=None, expected_ext_status_code=None, expected_ext_status=None,
+                     expected_ext_status_msg=None):
         with mock_wire_protocol(wire_protocol_data.DATA_FILE) as protocol:
             protocol.aggregate_status = None
             protocol.report_vm_status = MagicMock()
             exthandlers_handler = get_exthandlers_handler(protocol)
-            policy = \
-                {
-                    "policyVersion": "0.1.0",
-                    "extensionPolicies": {
-                        "allowListedExtensionsOnly": True,
-                        "signatureRequired": False,
-                        "signingPolicy": {},
-                        "extensions": {}
-                    },
-                    "jitPolicies": {}
-                }
+
             with open(os.path.join(data_dir, 'ga', "waagent_policy.json"), mode='w') as policy_file:
                 json.dump(policy, policy_file, indent=4)
                 policy_file.flush()
@@ -3536,56 +3544,75 @@ class TestExtensionHandlerManifest(AgentTestCase):
                 vm_status = args[0]
                 self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
                 exthandler = vm_status.vmAgent.extensionHandlers[0]
-                expected_msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not specified in allowlist. To enable, add extension to the allowed list."
-                self.assertEqual(-1, exthandler.code)
-                self.assertEqual('NotReady', exthandler.status)
-                self.assertEqual(expected_msg, exthandler.message)
+                self.assertEqual(expected_handler_status_code, exthandler.code)
+                self.assertEqual(expected_handler_status, exthandler.status)
+                self.assertEqual(expected_handler_status_msg, exthandler.message)
                 ext_status = exthandler.extension_status
-                self.assertEqual(-1, ext_status.code)
-                self.assertEqual('error', ext_status.status)
-                self.assertEqual(expected_msg, ext_status.message)
+                self.assertEqual(expected_ext_status_code, ext_status.code)
+                self.assertEqual(expected_ext_status, ext_status.status)
+                self.assertEqual(expected_ext_status_msg, ext_status.message)
 
-    @patch('azurelinuxagent.common.conf.get_extension_policy_enabled', return_value=True)
-    @patch('azurelinuxagent.ga.policy.policy_engine._CUSTOM_POLICY_PATH', new=os.path.join(data_dir, 'ga', "waagent_policy.json"))
-    def test_should_block_unsigned_extension_if_signature_required_true(self, _, *args):
-        # Test the case where extension does not have an encoded signature.
-        data_file = wire_protocol_data.DATA_FILE.copy()
-        data_file["ext_conf"] = "wire/ext_conf-no_encoded_signature.xml"
-        with mock_wire_protocol(data_file) as protocol:
-            protocol.aggregate_status = None
-            protocol.report_vm_status = MagicMock()
-            exthandlers_handler = get_exthandlers_handler(protocol)
-            policy = \
-                {
-                    "policyVersion": "0.1.0",
-                    "extensionPolicies": {
-                        "allowListedExtensionsOnly": False,
-                        "signatureRequired": True,
-                        "signingPolicy": {},
-                        "extensions": {}
-                    },
-                    "jitPolicies": {}
-                }
-            with open(os.path.join(data_dir, 'ga', "waagent_policy.json"), mode='w') as policy_file:
-                json.dump(policy, policy_file, indent=4)
-                policy_file.flush()
-                exthandlers_handler.run()
-                exthandlers_handler.report_ext_handlers_status()
+    def test_should_fail_disallowed_extension_if_allowListedExtensionsOnly_true(self):
 
-                report_vm_status = protocol.report_vm_status
-                self.assertTrue(report_vm_status.called)
-                args, _ = report_vm_status.call_args
-                vm_status = args[0]
-                self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
-                exthandler = vm_status.vmAgent.extensionHandlers[0]
-                expected_msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: [PolicyError] extension is not signed and policy requires signatures. To enable, ensure that extension  is signed or set signatureRequired=false."
-                self.assertEqual(-1, exthandler.code)
-                self.assertEqual('NotReady', exthandler.status)
-                self.assertEqual(expected_msg, exthandler.message)
-                ext_status = exthandler.extension_status
-                self.assertEqual(-1, ext_status.code)
-                self.assertEqual('error', ext_status.status)
-                self.assertEqual(expected_msg, ext_status.message)
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "extensions": {}
+                },
+            }
+        expected_msg = "[PolicyError] Extension is disallowed by agent policy and will not be processed: " \
+                       "extension is not specified in allowlist. To process, add extension to the allowed list " \
+                       "in the policy file ('{0}')".format(self.test_policy_path)
+        self._test_policy(policy, 1015, 'NotReady', expected_msg, 1015, 'error', expected_msg)
+
+    def test_should_enable_extension_if_in_allowlist(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "extensions": {
+                        "OSTCExtensions.ExampleHandlerLinux": {}
+                    }
+                },
+            }
+        expected_msg = "Plugin enabled"
+        self._test_policy(policy, 0, 'Ready', expected_msg, 0, 'success')
+
+    def test_should_enable_extension_if_allowListedExtensionsOnly_false(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": False,
+                    "signatureRequired": False,
+                    "extensions": {}
+                },
+            }
+        expected_msg = "Plugin enabled"
+        self._test_policy(policy, 0, 'Ready', expected_msg, 0, 'success')
+
+    def test_should_handle_policy_invalid_error(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": "False",
+                    "extensions": {}
+                },
+            }
+        expected_msg = "[PolicyInvalidError] Customer-provided policy file ('{0}') is invalid, please correct the " \
+                       "following error: invalid type str for attribute 'allowListedExtensionsOnly', please change to " \
+                       "bool.".format(self.test_policy_path)
+        self._test_policy(policy, 1015, 'NotReady', expected_msg, 1015, 'error', expected_msg)
+
+    def test_should_handle_exception(self):
+
+
 
 if __name__ == '__main__':
     unittest.main()

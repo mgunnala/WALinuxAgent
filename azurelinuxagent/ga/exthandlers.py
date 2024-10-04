@@ -38,7 +38,7 @@ from azurelinuxagent.common import version
 from azurelinuxagent.common.agent_supported_feature import get_agent_supported_features_list_for_extensions, \
     SupportedFeatureNames, get_supported_feature_by_name, get_agent_supported_features_list_for_crp
 from azurelinuxagent.ga.cgroupconfigurator import CGroupConfigurator
-from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, PolicyError
+from azurelinuxagent.ga.policy.policy_engine import ExtensionPolicyEngine, PolicyError, _CUSTOM_POLICY_PATH
 from azurelinuxagent.common.datacontract import get_properties, set_properties
 from azurelinuxagent.common.errorstate import ErrorState
 from azurelinuxagent.common.event import add_event, elapsed_milliseconds, WALAEventOperation, \
@@ -478,9 +478,28 @@ class ExtHandlersHandler(object):
         depends_on_err_msg = None
         extensions_enabled = conf.get_extensions_enabled()
 
+        # Instantiate policy engine on a per-goal state basis. Same engine should be used when handling each handler.
+        policy_error = None
+        try:
+            policy_engine = ExtensionPolicyEngine()
+        except Exception as ex:
+            policy_error = ustr(ex)
+
         for extension, ext_handler in all_extensions:
 
             handler_i = ExtHandlerInstance(ext_handler, self.protocol, extension=extension)
+
+            # If an error is raised during policy engine instantiation, we want to block all extensions and report
+            # status. We report status to CRP here to fail fast.
+            if policy_error is not None:
+                add_event(op=handler_i.operation, message=policy_error)
+                handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=policy_error, code=1015)
+                handler_i.create_status_file_if_not_exist(extension,
+                                                              status=ExtensionStatusValue.error,
+                                                              code=1015,
+                                                              operation=handler_i.operation,
+                                                              message=policy_error)
+                continue
 
             # In case of extensions disabled, we skip processing extensions. But CRP is still waiting for some status
             # back for the skipped extensions. In order to propagate the status back to CRP, we will report status back
@@ -522,8 +541,6 @@ class ExtHandlersHandler(object):
 
                 continue
 
-            # Instantiate policy engine on a per-goal state basis. Same engine should be used when handling each handler.
-            policy_engine = ExtensionPolicyEngine()
 
             # Process extensions and get if it was successfully executed or not
             extension_success = self.handle_ext_handler(handler_i, extension, goal_state_id, policy_engine)
@@ -611,12 +628,8 @@ class ExtHandlersHandler(object):
             # Check extension policy
             should_allow = policy_engine.should_allow_extension(ext_handler_i.ext_handler)
             if not should_allow:
-                err_msg = "extension is not specified in allowlist. To allow processing, add extension to the allowed list."
-                raise PolicyError(err_msg)
-            should_enforce_signature = policy_engine.should_enforce_signature_validation(ext_handler_i.ext_handler)
-            if should_enforce_signature and ext_handler_i.ext_handler.encoded_signature is None:
-                err_msg = "extension is not signed and policy requires signatures. To allow processing, ensure that extension " \
-                          " is signed or set signatureRequired=false."
+                err_msg = "extension is not specified in allowlist. To process, add extension to the allowed list " \
+                          "in the policy file ('{0}')".format(_CUSTOM_POLICY_PATH)
                 raise PolicyError(err_msg)
 
             handler_state = ext_handler_i.ext_handler.state
@@ -677,15 +690,13 @@ class ExtHandlersHandler(object):
         except PolicyError as error:
             # If extension is disallowed, we don't process it. But CRP is still waiting for status, so we will report
             # status here with an error message.
-            msg = "Extension is disallowed by agent policy and will not be enabled or downloaded: {0}".format(
-                ustr(error))
-            add_event(op=WALAEventOperation.Enable, message=msg)
-            ext_handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=msg, code=-1)
+            add_event(op=ext_handler_i.operation, message=ustr(error))
+            ext_handler_i.set_handler_status(status=ExtHandlerStatusValue.not_ready, message=ustr(error), code=1015)
             ext_handler_i.create_status_file_if_not_exist(extension,
                                                           status=ExtensionStatusValue.error,
-                                                          code=-1,
+                                                          code=1015,
                                                           operation=ext_handler_i.operation,
-                                                          message=msg)
+                                                          message=ustr(error))
         except Exception as error:
             error.code = -1
             self.__handle_and_report_ext_handler_errors(ext_handler_i, error, ext_handler_i.operation, ustr(error),

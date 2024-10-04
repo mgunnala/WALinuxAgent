@@ -38,6 +38,9 @@ class PolicyError(AgentError):
     """
     Error raised during agent policy enforcement.
     """
+    def __init__(self, msg, inner=None):
+        msg = "Extension is disallowed by agent policy and will not be processed: {0}".format(msg)
+        super(PolicyError, self).__init__(msg, inner)
 
 
 class PolicyInvalidError(AgentError):
