@@ -3507,5 +3507,208 @@ class TestExtensionHandlerManifest(AgentTestCase):
                 self.assertIn("'supportsMultipleExtensions' has a non-boolean value", kw_messages[2]['message'])
 
 
+class TestExtensionPolicy(TestExtensionBase):
+    def setUp(self):
+        AgentTestCase.setUp(self)
+        self.policy_path = os.path.join(self.tmp_dir, "waagent_policy.json")
+
+        # Patch attributes to enable policy feature
+        self.patch_policy_path = patch('azurelinuxagent.common.conf.get_policy_file_path',
+                                       return_value=str(self.policy_path))
+        self.patch_policy_path.start()
+        self.patch_conf_flag = patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled',
+                                     return_value=True)
+        self.patch_conf_flag.start()
+        self.maxDiff = None     # When long error messages don't match, display the entire diff.
+
+    def tearDown(self):
+        patch.stopall()
+        AgentTestCase.tearDown(self)
+
+    def _create_policy_file(self, policy):
+        with open(self.policy_path, mode='w') as policy_file:
+            if isinstance(policy, dict):
+                json.dump(policy, policy_file, indent=4)
+            else:
+                policy_file.write(policy)
+            policy_file.flush()
+
+
+    # MANU TODO: clean this up and use it in test_policy
+    def _assert_status(self, report_vm_status, expected_status, version,
+                               expected_handler_name="OSTCExtensions.ExampleHandlerLinux", expected_msg=None):
+        self.assertTrue(report_vm_status.called)
+        args, kw = report_vm_status.call_args  # pylint: disable=unused-variable
+        vm_status = args[0]
+        self.assertNotEqual(0, len(vm_status.vmAgent.extensionHandlers))
+        handler_status = next(
+            status for status in vm_status.vmAgent.extensionHandlers if status.name == expected_handler_name)
+        self.assertEqual(expected_status, handler_status.status, get_properties(handler_status))
+        self.assertEqual(expected_handler_name, handler_status.name)
+        self.assertEqual(version, handler_status.version)
+        if expected_msg is not None:
+            self.assertIn(expected_msg, handler_status.message)
+
+    def _test_policy(self, policy, op, expected_status_code=None, expected_handler_status=None,
+                     expected_status_msg=None):
+
+        with mock_wire_protocol(wire_protocol_data.DATA_FILE) as protocol:
+            if op == ExtensionRequestedState.Uninstall:
+                protocol.mock_wire_data.set_extensions_config_state(ExtensionRequestedState.Uninstall)
+                protocol.mock_wire_data.set_incarnation(2)
+                protocol.client.update_goal_state()
+            protocol.aggregate_status = None
+            protocol.report_vm_status = MagicMock()
+            exthandlers_handler = get_exthandlers_handler(protocol)
+
+            self._create_policy_file(policy)
+            exthandlers_handler.run()
+            exthandlers_handler.report_ext_handlers_status()
+
+            report_vm_status = protocol.report_vm_status
+            self.assertTrue(report_vm_status.called)
+            args, _ = report_vm_status.call_args
+            vm_status = args[0]
+            self.assertEqual(1, len(vm_status.vmAgent.extensionHandlers))
+            exthandler = vm_status.vmAgent.extensionHandlers[0]
+            if expected_status_code is not None:
+                self.assertEqual(expected_status_code, exthandler.code)
+            if expected_handler_status is not None:
+                self.assertEqual(expected_handler_status, exthandler.status)
+            if expected_status_msg is not None:
+                self.assertIn(expected_status_msg, exthandler.message)
+
+    def test_should_enable_if_extension_allowed(self):
+        cases = [
+            # Allowlist only false
+            {
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": False,
+                }
+            },
+            # Allowlist true and extension allowed
+            {
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "extensions": {
+                        "OSTCExtensions.ExampleHandlerLinux": {}
+                    }
+                }
+            }
+        ]
+        for policy in cases:
+            expected_msg = "Plugin enabled"
+            self._test_policy(policy=policy, op=ExtensionRequestedState.Uninstall, expected_status_code=0,
+                              expected_handler_status='Ready', expected_status_msg=expected_msg)
+
+    def test_should_fail_enable_if_extension_disallowed(self):
+        policy = \
+            {
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+               }
+            }
+        expected_msg = "failed to enable extension 'OSTCExtensions.ExampleHandlerLinux' because extension is not specified in allowlist."
+        self._test_policy(policy=policy, op=ExtensionRequestedState.Enabled, expected_status_code=ExtensionErrorCodes.PluginEnableProcessingFailed,
+                          expected_handler_status='NotReady', expected_status_msg=expected_msg)
+
+    def test_should_fail_enable_for_invalid_policy(self):
+        policy = \
+            {
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": "False"
+                }
+            }
+        expected_msg = ("[InvalidPolicyError] Customer-provided policy file ('{0}') is invalid, please correct the "
+                       "following error: invalid type str for attribute 'allowListedExtensionsOnly' in section "
+                       "'extensionPolicies', please change to boolean.".format(self.policy_path))
+        self._test_policy(policy=policy, op=ExtensionRequestedState.Enabled, expected_status_code=ExtensionErrorCodes.PluginEnableProcessingFailed,
+                          expected_handler_status='NotReady', expected_status_msg=expected_msg)
+
+    def test_should_fail_extension_if_error_thrown(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0"
+            }
+        with patch('azurelinuxagent.ga.policy.policy_engine.ExtensionPolicyEngine.__init__',
+                   side_effect=Exception("mock exception")):
+            expected_msg = "Extension is disallowed by agent policy and will not be processed: \nInner error: mock exception"
+            self._test_policy(policy=policy, op=ExtensionRequestedState.Enabled,
+                              expected_status_code=ExtensionErrorCodes.PluginEnableProcessingFailed,
+                              expected_handler_status='NotReady', expected_status_msg=expected_msg)
+
+
+    def test_should_uninstall_if_extension_allowed(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": False
+                }
+            }
+        self._test_policy(policy=policy, op=ExtensionRequestedState.Uninstall, expected_status_code=0,
+                          expected_handler_status='Ready')
+
+    def test_should_fail_uninstall_if_extension_disallowed(self):
+        policy = \
+            {
+                "policyVersion": "0.1.0",
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "signatureRequired": False,
+                    "extensions": {}
+                },
+            }
+
+        expected_msg = "Extension is disallowed by agent policy and will not be processed: " \
+                       "failed to uninstall extension 'OSTCExtensions.ExampleHandlerLinux' because extension is not specified " \
+                       "in allowlist."
+        self._test_policy(policy=policy, op=ExtensionRequestedState.Uninstall, expected_status_code=ExtensionErrorCodes.PluginDisableProcessingFailed,
+                          expected_handler_status='NotReady', expected_status_msg=expected_msg)
+
+    def test_should_fail_enable_if_dependent_extension_disallowed(self):
+        self._create_policy_file({
+                "extensionPolicies": {
+                    "allowListedExtensionsOnly": True,
+                    "extensions": {
+                        "OSTCExtensions.ExampleHandlerLinux": {}
+                    }
+                }
+            })
+        with mock_wire_protocol(wire_protocol_data.DATA_FILE_EXT_SEQUENCING) as protocol:
+            protocol.aggregate_status = None
+            protocol.report_vm_status = MagicMock()
+            exthandlers_handler = get_exthandlers_handler(protocol)
+            dep_ext_level_2 = extension_emulator(name="OSTCExtensions.ExampleHandlerLinux")
+            dep_ext_level_1 = extension_emulator(name="OSTCExtensions.OtherExampleHandlerLinux")
+
+            with enable_invocations(dep_ext_level_2, dep_ext_level_1) as invocation_record:
+                exthandlers_handler.run()
+                exthandlers_handler.report_ext_handlers_status()
+
+                # OtherExampleHandlerLinux should be disallowed by policy, ExampleHandlerLinux should be skipped because
+                # dependent extension failed
+                self._assert_status(protocol.report_vm_status, "NotReady", "1.0.0",
+                                            expected_handler_name="OSTCExtensions.OtherExampleHandlerLinux",
+                                            expected_msg=("Extension is disallowed by agent policy and will not be processed: "
+                                                          "failed to enable extension 'OSTCExtensions.OtherExampleHandlerLinux' "
+                                                          "because extension is not specified in allowlist."))
+
+                self._assert_status(protocol.report_vm_status, "NotReady", "1.0.0",
+                                            expected_handler_name="OSTCExtensions.ExampleHandlerLinux",
+                                            expected_msg="Skipping processing of extensions since execution of dependent "
+                                                         "extension OSTCExtensions.OtherExampleHandlerLinux failed")
+
+                # check handler list and dependency levels
+                self.assertTrue(exthandlers_handler.ext_handlers is not None)
+                self.assertTrue(exthandlers_handler.ext_handlers is not None)
+                self.assertEqual(len(exthandlers_handler.ext_handlers), 2)
+                self.assertEqual(1, next(handler for handler in exthandlers_handler.ext_handlers if
+                                         handler.name == dep_ext_level_1.name).settings[0].dependencyLevel)
+                self.assertEqual(2, next(handler for handler in exthandlers_handler.ext_handlers if
+                                         handler.name == dep_ext_level_2.name).settings[0].dependencyLevel)
+
+
+
 if __name__ == '__main__':
     unittest.main()

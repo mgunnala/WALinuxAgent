@@ -22,7 +22,7 @@ from azurelinuxagent.common.future import ustr
 from azurelinuxagent.common import logger
 from azurelinuxagent.common.event import WALAEventOperation, add_event
 from azurelinuxagent.common import conf
-from azurelinuxagent.common.exception import AgentError
+from azurelinuxagent.common.exception import AgentError, ExtensionError, ExtensionErrorCodes
 from azurelinuxagent.common.protocol.extensions_goal_state_from_vm_settings import _CaseFoldedDict
 from azurelinuxagent.common.utils.flexible_version import FlexibleVersion
 
@@ -51,10 +51,13 @@ _DEFAULT_SIGNATURE_REQUIRED = False
 _MAX_SUPPORTED_POLICY_VERSION = "0.1.0"
 
 
-class PolicyError(AgentError):
+class ExtensionPolicyError(ExtensionError):
     """
     Error raised during agent policy enforcement.
     """
+    def __init__(self, msg, inner=None, code=-1):
+        msg = "Extension is disallowed by agent policy and will not be processed: {0}".format(msg)
+        super(ExtensionPolicyError, self).__init__(msg, inner, code)
 
 
 class InvalidPolicyError(AgentError):

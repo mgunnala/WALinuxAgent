@@ -1,0 +1,8 @@
+#
+# The test suite verifies that disallowed extensions are not processed, but the agent should still report status.
+#
+name: "ExtensionPolicy"
+tests:
+  - "extension_policy/extension_policy_with_dependencies.py"
+images: "ubuntu_2204"
+executes_on_scale_set: true
