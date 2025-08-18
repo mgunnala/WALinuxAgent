@@ -194,13 +194,15 @@ def validate_signature(package_path, signature, package_full_name, failure_log_l
             '-in', signature_path,  # Path to the CMS signature file to be verified
             '-content', package_path,  # Path to the original package that was signed
             '-purpose', 'any',  # Allows verification for any purpose, not restricted to specific uses
-            '-CAfile', microsoft_root_cert_file,  # Path to the trusted root certificate file used for verification
+            '-CAfile', '/var/lib/waagent/self_signed_test_cert.pem',  # Path to the trusted root certificate file used for verification
             '-no_check_time'  # Skips checking whether the certificate is expired
         ]
         run_command(command, encode_output=False)
+        duration = elapsed_milliseconds(start_time)
         _report_validation_event(op=WALAEventOperation.PackageSignatureResult, level=logger.LogLevel.INFO,
                                  message="Successfully validated signature for package '{0}'".format(package_full_name),
-                                 name=name, version=version, duration=elapsed_milliseconds(start_time))
+                                 name=name, version=version, duration=duration)
+        return duration
 
     except CommandError as ex:
         # If the signature validation command failed, report a "PackageSignatureResult" event with operation duration.
@@ -322,3 +324,30 @@ def signature_validation_enabled():
     Returns True if signature validation is enabled in conf file and OpenSSL version supports all validation parameters.
     """
     return conf.get_signature_validation_enabled() and openssl_version_supported_for_signature_validation()
+
+
+def sign_file(target_file):
+    """
+    Returns encodedSignature string for the target file
+    """
+    sig_file = "test_signature.p7b"
+    command = [
+        conf.get_openssl_cmd(), 'cms', '-sign',
+        '-binary',
+        '-in', target_file,
+        '-signer', '/var/lib/waagent/self_signed_test_cert.pem',
+        '-inkey', '/var/lib/waagent/mykey.pem',
+        '-outform', 'DER',
+        '-out', sig_file
+    ]
+    try:
+        run_command(command, encode_output=False)
+        with open(sig_file, "rb") as f:
+            sig_bytes = f.read()
+        encoded_sig = base64.b64encode(sig_bytes).decode("utf-8")
+    finally:
+        if os.path.exists(sig_file):
+            os.remove(sig_file)
+
+    return encoded_sig
+

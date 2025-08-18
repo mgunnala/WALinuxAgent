@@ -17,6 +17,7 @@
 # Requires Python 2.6+ and Openssl 1.0+
 #
 import os
+import subprocess
 from azurelinuxagent.common import logger
 from azurelinuxagent.common import conf
 from azurelinuxagent.common import event
@@ -58,6 +59,26 @@ oijHHKOnNlA8OqTfSm7mhzvO6/DggTedEzxSjr25HTTGHdUKaj2YKXCMiSrRq4IQ
 SB/c9O+lxbtVGjhjhE63bK2VVOxlIhBJF7jAHscPrFRH
 -----END CERTIFICATE-----"""
 
+_SELF_SIGNED_TEST_CERT = """-----BEGIN CERTIFICATE-----
+MIIDBzCCAe+gAwIBAgIUEOWLdeQFJoEAcT8LqFuGoWgcskUwDQYJKoZIhvcNAQEL
+BQAwEzERMA8GA1UEAwwIdGVzdGNlcnQwHhcNMjUwODE4MTY1NzI2WhcNMjcwODE4
+MTY1NzI2WjATMREwDwYDVQQDDAh0ZXN0Y2VydDCCASIwDQYJKoZIhvcNAQEBBQAD
+ggEPADCCAQoCggEBAOHOtr3HNJDfk/SNEct+AINwD48AsnXt8qU9aEmKBqwXD8Nv
+OQs/ZtCxIwc2+OGfeHWyw9IHBhJzewZMDCgsmKPMoD+ZUcBLHHdX/711BDn7h2md
+FKhM3gyV6OXwD/GvCxtgebcMy8iKS+7wDI52HaJg0epXtesfw7P3KLC6nkomoX6J
+Qfow8PhnwoLdzZV41mP+YS6sMtOea60dSlskMtXulpLMUW6xaQi0w1EgFLQDQI6j
+eB6VzNKDuV8Vvgts3agcz4lyQ+YnQ7Sy0ogfgJRU1/5yNLk+lV/+ARFrJvlhJXFo
+BqAvqgNMySjPKJ/O5IQJApx5GCN+cXD5OZHzW38CAwEAAaNTMFEwHQYDVR0OBBYE
+FHawlOYiAZ1jQZxPKtZZvzO11BJhMB8GA1UdIwQYMBaAFHawlOYiAZ1jQZxPKtZZ
+vzO11BJhMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBALtNoD+0
+t0B1g+CTJz7iBv1Nqmzx7t4AE1SEDPifuelJhBGbCXgje6IVZinvFCRDWbsI04eM
+IbWH4og7joAgvoj9O5Wc0hlMxjPLfBKZndtLnMDlyH93GDPNfURoId6bhicsqezT
+5xyc8UiXSihxhzU5Y32kutJ3P73JZDhzQfceIrUReQUEsVc4HtEjkpUyau0ZI456
+pIos9UYyocSHjPgiFXuRr49d5o+HVP1N9ZzQSY8mlrMq3zpoEFMcauTQ90qEu9md
+7j1wWA/8MA1eA22/WBJhSR+TTyv0VXjsQt0Aqhtu0Lj7ugpcm917ejBZCLaie3MR
+bEOvNR4yokT8CPk=
+-----END CERTIFICATE-----"""
+
 
 def get_microsoft_signing_certificate_path():
     return os.path.join(conf.get_lib_dir(), "microsoft_root_certificate.pem")
@@ -83,7 +104,6 @@ def _write_certificate(cert_string, output_path):
         if umask is not None:
             os.umask(umask)
 
-
 def write_signing_certificates():
     """
     Write root certificates to the library directory (directory specified in conf.py).
@@ -91,3 +111,4 @@ def write_signing_certificates():
     self-update agent can use the same file path for the certificates.
     """
     _write_certificate(_MICROSOFT_ROOT_CERT_2011_03_22, get_microsoft_signing_certificate_path())
+    _write_certificate(_SELF_SIGNED_TEST_CERT, os.path.join(conf.get_lib_dir(), "self_signed_test_cert.pem"))

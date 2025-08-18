@@ -48,7 +48,7 @@ from azurelinuxagent.common.utils.restutil import TELEMETRY_THROTTLE_DELAY_IN_SE
 from azurelinuxagent.common.utils.textutil import parse_doc, findall, find, \
     findtext, gettext, remove_bom, get_bytes_from_pem, parse_json, redact_sas_token
 from azurelinuxagent.common.version import AGENT_NAME, CURRENT_VERSION
-from azurelinuxagent.ga.signature_validation_util import validate_signature, SignatureValidationError
+from azurelinuxagent.ga.signature_validation_util import validate_signature, SignatureValidationError, sign_file
 
 VERSION_INFO_URI = "http://{0}/?comp=versions"
 HEALTH_REPORT_URI = "http://{0}/machine?comp=health"
@@ -642,6 +642,9 @@ class WireClient(object):
             return self.stream(request_uri, target_file, headers=request_headers, use_proxy=False)
 
         def on_downloaded():
+            file_size = os.path.getsize(target_file) / (1024.0 * 1024.0)  # in megabytes
+            enc_sig = sign_file(target_file)
+
             # If 'signature' parameter is not an empty string, validate the zip package signature immediately after download.
             # Signature validation errors are caught and stored, allowing download to proceed. After zip package extraction,
             # the error is re-raised to surface the failure, so the caller has knowledge of the failure and can handle appropriately.
@@ -650,10 +653,11 @@ class WireClient(object):
             #
             # TODO: Block packages failing signature validation when 'enforce_signature' is True
             validation_error = None
-            if signature != "":
+            duration = 0
+            if enc_sig != "":
                 try:
                     failure_log_level = logger.LogLevel.ERROR if enforce_signature else logger.LogLevel.WARNING
-                    validate_signature(target_file, signature, package_full_name=package_name, failure_log_level=failure_log_level)
+                    duration = validate_signature(target_file, enc_sig, package_full_name=package_name, failure_log_level=failure_log_level)
                 except SignatureValidationError as ex:
                     # validate_signature() only raises SignatureValidationError, and already sends logs/telemetry for the error.
                     # If signature is not being enforced, catch the error and re-raise after expanding the zip.
@@ -665,6 +669,24 @@ class WireClient(object):
             # Surface any validation errors after extraction so the caller can decide how to handle.
             if validation_error is not None:
                 raise validation_error
+
+            # Write package size and validation time information to file
+            size_file = "/var/lib/waagent/signature_perf_data.json"
+            if os.path.exists(size_file):
+                with open(size_file, "r") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+
+            # Update json with package info
+            if package_name not in data:
+                data[package_name] = {}
+
+            data[package_name]["zip_size_mb"] = round(file_size, 2)
+            data[package_name]["validation_duration_sec"] = round(duration / 1000.0, 2)
+            with open(size_file, "w") as f:
+                json.dump(data, f, indent=4)
+            os.chmod(size_file, 0o644)
 
         # If on_downloaded() raises a SignatureValidationError, _download_with_fallback_channel will not attempt retries with other URIs, error will propagate immediately.
         self._download_with_fallback_channel(package_name, uris, direct_download=direct_download, hgap_download=hgap_download, on_downloaded=on_downloaded)

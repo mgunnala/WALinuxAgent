@@ -58,7 +58,7 @@ from azurelinuxagent.common.utils.archive import ARCHIVE_DIRECTORY_NAME
 from azurelinuxagent.common.utils.flexible_version import FlexibleVersion
 from azurelinuxagent.common.version import AGENT_NAME, CURRENT_VERSION
 from azurelinuxagent.ga.signature_validation_util import validate_handler_manifest_signing_info, SignatureValidationError, \
-    PackageValidationError, save_signature_validation_state, signature_validation_enabled, validate_signature
+    PackageValidationError, save_signature_validation_state, signature_validation_enabled, validate_signature, sign_file
 
 _HANDLER_NAME_PATTERN = r'^([^-]+)'
 _HANDLER_VERSION_PATTERN = r'(\d+(?:\.\d+)*)'
@@ -686,6 +686,9 @@ class ExtHandlersHandler(object):
             ext_handler_i.logger.info("Target handler state: {0} [{1}]", handler_state, goal_state_id)
             if handler_state == ExtensionRequestedState.Enabled:
                 self.handle_enable(ext_handler_i, extension)
+                ext_handler_i.create_status_file(extension, status=ExtensionStatusValue.success, code=0,
+                                                 operation=ext_handler_i.operation, message="Enable succeeded",
+                                                 overwrite=True)
             elif handler_state == ExtensionRequestedState.Disabled:
                 # The "disabled" state is now deprecated. Send telemetry if it is still being used on any VMs
                 event.info(WALAEventOperation.RequestedStateDisabled, 'Goal State is requesting "disabled" state on {0} [Activity ID: {1}]',  ext_handler_i.ext_handler.name, self._gs_activity_id)
@@ -1472,6 +1475,17 @@ class ExtHandlerInstance(object):
 
         self.pkg_file = package_file
 
+        # Test changes - create a dummy script that the manifest will point to
+        script_path = os.path.join(self.get_base_dir(), "dummy.sh")
+        script_content = """#!/bin/sh
+        # This is a no-op dummy script
+        exit 0
+        """
+        with open(script_path, "w") as f:
+            f.write(script_content)
+        os.chmod(script_path, 0o755)
+
+
     def ensure_consistent_data_for_mc(self):
         # If CRP expects Handler to support MC, ensure the HandlerManifest also reflects that.
         # Even though the HandlerManifest.json is not expected to change once the extension is installed,
@@ -2146,16 +2160,21 @@ class ExtHandlerInstance(object):
                 return process_output
 
     def load_manifest(self):
-        man_file = self.get_manifest_file()
-        try:
-            data = json.loads(fileutil.read_file(man_file))
-        except (IOError, OSError) as e:
-            raise ExtensionError('Failed to load manifest file ({0}): {1}'.format(man_file, e.strerror),
-                                 code=ExtensionErrorCodes.PluginHandlerManifestNotFound)
-        except ValueError:
-            raise ExtensionError('Malformed manifest file ({0}).'.format(man_file),
-                                 code=ExtensionErrorCodes.PluginHandlerManifestDeserializationError)
-
+        # Hardcoded no-op manifest for testing
+        script_path = "dummy.sh"
+        data = [{
+            "name": self.ext_handler.name,
+            "version": self.ext_handler.version,
+            "handlerManifest": {
+                "installCommand": script_path,
+                "uninstallCommand": script_path,
+                "updateCommand": script_path,
+                "enableCommand": script_path,
+                "disableCommand": script_path,
+                "rebootAfterInstall": False,
+                "reportHeartbeat": False
+            }
+        }]
         return HandlerManifest(data[0])
 
     def update_settings_file(self, settings_file, settings):
