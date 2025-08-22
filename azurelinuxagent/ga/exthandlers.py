@@ -829,6 +829,9 @@ class ExtHandlersHandler(object):
 
             self.__setup_new_handler(ext_handler_i, extension, self.__should_ignore_signature_validation_errors(ext_handler_i))
 
+            # Create runtime policy file for extension before enabling
+            self._policy_engine.create_runtime_policy_file(ext_handler_i)
+
             if old_ext_handler_i is None:
                 ext_handler_i.install(extension=extension)
             elif ext_handler_i.version_ne(old_ext_handler_i):
@@ -2429,6 +2432,9 @@ class ExtHandlerInstance(object):
     def get_manifest_file(self):
         return os.path.join(self.get_base_dir(), 'HandlerManifest.json')
 
+    def get_runtime_policy_file(self):
+        return os.path.join(self.get_conf_dir(), 'waagent_runtime_policy.json')
+
     def get_env_file(self):
         return os.path.join(self.get_base_dir(), HandlerEnvironment.fileName)
 
@@ -2547,6 +2553,10 @@ class HandlerManifest(object):
 
     def is_continue_on_update_failure(self):
         value = self.data['handlerManifest'].get('continueOnUpdateFailure', False)
+        return self._parse_boolean_value(value, default_val=False)
+
+    def supports_policy(self):
+        value = self.data['handlerManifest'].get('supportsPolicy', False)
         return self._parse_boolean_value(value, default_val=False)
 
     def supports_multiple_extensions(self):
