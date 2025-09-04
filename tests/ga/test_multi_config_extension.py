@@ -994,6 +994,9 @@ class TestMultiConfigExtensions(_MultiConfigBaseTestClass):
         original_popen = subprocess.Popen
 
         def mock_popen(cmd, *_, **kwargs):
+            if "/usr/bin/openssl" in cmd[0]:  # let openssl calls go through
+                return original_popen(cmd, *_, **kwargs)
+
             if 'env' in kwargs:
                 handler_name, handler_version, __ = extract_extension_info_from_command(cmd)
                 ext_name = None

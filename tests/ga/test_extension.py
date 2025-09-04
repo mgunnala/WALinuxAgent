@@ -2169,14 +2169,23 @@ class TestExtension_Deprecated(TestExtensionBase):
         test_data = wire_protocol_data.WireProtocolData(wire_protocol_data.DATA_FILE_MULTIPLE_EXT)
         exthandlers_handler, protocol = self._create_mock(test_data, *args)  # pylint: disable=no-value-for-parameter
 
-        with patch("subprocess.Popen") as patch_popen:
-            exthandlers_handler.run()
-            exthandlers_handler.report_ext_handlers_status()
+        def assert_ext_seq_no_in_command_calls(seq_no):
+            original_popen = subprocess.Popen
+            def mock_popen(*popen_args, **kwargs):
+                if "/usr/bin/openssl" in popen_args[0]: # let openssl calls go through
+                    return original_popen(*popen_args, **kwargs)
+                return None
 
-            for _, kwargs in patch_popen.call_args_list:
-                self.assertIn(ExtCommandEnvVariable.ExtensionSeqNumber, kwargs['env'])
-                self.assertEqual(kwargs['env'][ExtCommandEnvVariable.ExtensionSeqNumber], "0")
+            with patch("subprocess.Popen", side_effect=mock_popen) as patch_popen:
+                exthandlers_handler.run()
+                exthandlers_handler.report_ext_handlers_status()
 
+                for call_args, kwargs in patch_popen.call_args_list:
+                    if "/usr/bin/openssl" not in call_args[0]:
+                        self.assertIn(ExtCommandEnvVariable.ExtensionSeqNumber, kwargs["env"])
+                        self.assertEqual(kwargs["env"][ExtCommandEnvVariable.ExtensionSeqNumber], seq_no)
+
+        assert_ext_seq_no_in_command_calls("0")
         self._assert_handler_status(protocol.report_vm_status, "Ready", expected_ext_count=1, version="1.0.0")
 
         # Next incarnation and seq for extensions, update version
@@ -2186,14 +2195,7 @@ class TestExtension_Deprecated(TestExtensionBase):
         test_data.manifest = test_data.manifest.replace('1.0.0', '1.0.1')
         exthandlers_handler, protocol = self._create_mock(test_data, *args)  # pylint: disable=no-value-for-parameter
 
-        with patch("subprocess.Popen") as patch_popen:
-            exthandlers_handler.run()
-            exthandlers_handler.report_ext_handlers_status()
-
-            for _, kwargs in patch_popen.call_args_list:
-                self.assertIn(ExtCommandEnvVariable.ExtensionSeqNumber, kwargs['env'])
-                self.assertEqual(kwargs['env'][ExtCommandEnvVariable.ExtensionSeqNumber], "1")
-
+        assert_ext_seq_no_in_command_calls("1")
         self._assert_handler_status(protocol.report_vm_status, "Ready", expected_ext_count=1, version="1.0.1")
 
     def test_ext_sequence_no_should_be_set_from_within_extension(self, *args):
@@ -3433,7 +3435,8 @@ class TestExtension(TestExtensionBase, HttpRequestPredicates):
             original_popen = subprocess.Popen
 
             def mock_popen(cmd, *args, **kwargs):
-                if cmd.endswith("sample.py -enable"):
+                cmd_str = " ".join(cmd) if isinstance(cmd, (list, tuple)) else str(cmd)
+                if cmd_str.endswith("sample.py -enable"):
                     cmd = "echo '{0}'; >&2 echo '{0}'; exit 1".format(original)
                 return original_popen(cmd, *args, **kwargs)
 
@@ -4469,20 +4472,20 @@ class TestSignatureValidationEnforced(_TestSignatureValidationBase):
     def test_enable_should_succeed_for_extension_with_invalid_signature_if_conf_flag_disabled(self):
         # If 'Debug.EnableSignatureValidation' flag is set to false, enable should succeed for an extension with
         # invalid signature, even with enforcement enabled.
-        self.patch_conf_flag.stop()
-        data_file = wire_protocol_data.DATA_FILE.copy()
-        data_file["test_ext"] = "signing/Microsoft.OSTCExtensions.Edp.VMAccessForLinux__1.7.0.zip"
-        data_file["ext_conf"] = "wire/ext_conf-vm_access_with_invalid_signature.xml"
-        data_file["manifest"] = "wire/manifest_vm_access.xml"
+        with patch('azurelinuxagent.ga.exthandlers.conf.get_signature_validation_enabled', return_value=False):
+            data_file = wire_protocol_data.DATA_FILE.copy()
+            data_file["test_ext"] = "signing/Microsoft.OSTCExtensions.Edp.VMAccessForLinux__1.7.0.zip"
+            data_file["ext_conf"] = "wire/ext_conf-vm_access_with_invalid_signature.xml"
+            data_file["manifest"] = "wire/manifest_vm_access.xml"
 
-        self._test_enable_extension(data_file=data_file,
-                                    signature_validation_should_succeed=False,
-                                    expected_status_code=0,
-                                    expected_handler_status='Ready',
-                                    expected_ext_count=1,
-                                    expected_status_msg='Plugin enabled',
-                                    expected_handler_name="Microsoft.OSTCExtensions.Edp.VMAccessForLinux",
-                                    expected_version="1.7.0")
+            self._test_enable_extension(data_file=data_file,
+                                        signature_validation_should_succeed=False,
+                                        expected_status_code=0,
+                                        expected_handler_status='Ready',
+                                        expected_ext_count=1,
+                                        expected_status_msg='Plugin enabled',
+                                        expected_handler_name="Microsoft.OSTCExtensions.Edp.VMAccessForLinux",
+                                        expected_version="1.7.0")
 
     def test_enable_should_fail_for_existing_zip_package_if_signature_validation_fails(self):
         # Signature validation fails for existing zip package -> block extension

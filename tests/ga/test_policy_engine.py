@@ -92,22 +92,22 @@ class TestPolicyEngine(_TestPolicyBase):
 
         # Test when conf flag is turned off - feature should be disabled.
         self.patch_conf_flag.stop()
-        engine1 = _PolicyEngine()
-        self.assertFalse(engine1.policy_enforcement_enabled,
-                         msg="Conf flag is set to false and policy file missing so policy enforcement should be disabled.")
+        with patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled', return_value=False):
+            engine1 = _PolicyEngine()
+            self.assertFalse(engine1.policy_enforcement_enabled,
+                             msg="Conf flag is set to false and policy file missing so policy enforcement should be disabled.")
 
         # Turn on conf flag - feature should still be disabled, because policy file is not present.
-        self.patch_conf_flag.start()
         engine2 = _PolicyEngine()
         self.assertFalse(engine2.policy_enforcement_enabled,
                          msg="Policy file is not present so policy enforcement should be disabled.")
 
         # Create a policy file, but turn off conf flag - feature should be disabled due to flag.
-        self.patch_conf_flag.stop()
-        self._create_policy_file({})
-        engine3 = _PolicyEngine()
-        self.assertFalse(engine3.policy_enforcement_enabled,
-                         msg="Conf flag is set to false so policy enforcement should be disabled.")
+        with patch('azurelinuxagent.ga.policy.policy_engine.conf.get_extension_policy_enabled', return_value=False):
+            self._create_policy_file({})
+            engine3 = _PolicyEngine()
+            self.assertFalse(engine3.policy_enforcement_enabled,
+                             msg="Conf flag is set to false so policy enforcement should be disabled.")
 
     def test_should_parse_policy_successfully(self):
         """
