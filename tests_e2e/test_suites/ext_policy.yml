@@ -7,9 +7,14 @@ tests:
 images:
   - "endorsed"
   - "cvm-endorsed"
-# This test is executed in southcentralus as a workaround for recurring fabric "ServiceUnavailableFault" issues observed in westus2.
-locations: "AzureCloud:southcentralus"
-# TODO: This test is currently failing on usgov cloud due to an issue with the GuestConfig extension. Re-enable once the extension fix has been rolled out.
+
+# This test runs in eastus2euap because the CVM v5 SKU used in the test is no longer available in
+# southcentralus or westus2.
+# TODO: Once quota is granted, re-enable this test in a production region and update the CVM SKU to v6.
+locations: "AzureCloud:eastus2euap"
 skip_on_clouds:
+# TODO: This test is currently failing on usgov cloud due to an issue with the GuestConfig extension. Re-enable once the extension fix has been rolled out.
   - "AzureUSGovernment"
+# TODO: CVM v5 SKU is not available in the China cloud (chinanorth2). Re-enable this test once it has been migrated to v6 CVMs.
+  - "AzureChinaCloud"
 owns_vm: false
