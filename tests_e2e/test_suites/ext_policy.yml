@@ -8,7 +8,7 @@ images:
   - "endorsed"
   - "cvm-endorsed"
 # This test is executed in southcentralus as a workaround for recurring fabric "ServiceUnavailableFault" issues observed in westus2.
-locations: "AzureCloud:southcentralus"
+locations: "AzureCloud:eastus2euap"
 # TODO: This test is currently failing on usgov cloud due to an issue with the GuestConfig extension. Re-enable once the extension fix has been rolled out.
 skip_on_clouds:
   - "AzureUSGovernment"
