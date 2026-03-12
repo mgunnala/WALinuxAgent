@@ -174,7 +174,8 @@ __STRING_OPTIONS__ = {
     "ResourceDisk.Filesystem": "ext3",
     "AutoUpdate.GAFamily": "Prod",
     "Policy.PolicyFilePath": "/etc/waagent_policy.json",
-    "Protocol.EndpointDiscovery": "dhcp"
+    "Protocol.EndpointDiscovery": "dhcp",
+    "Debug.SignatureValidationExpiryTime": "2027-03-12"
 }
 
 
@@ -737,7 +738,17 @@ def get_signature_validation_initial_delay(conf=__conf__):
     """
     return conf.get_int("Debug.SignatureValidationInitialDelay", 10 * 60)
 
-  
+
+def get_signature_validation_expiry_time(conf=__conf__):
+    """
+    Get the expiry date for the extension signature validation feature.
+    After this date, signature validation will be disabled.
+    Format: YYYY-MM-DD
+    NOTE: This option is experimental and may be removed in later versions of the Agent.
+    """
+    return conf.get("Debug.SignatureValidationExpiryTime", "2027-03-12")
+
+
 def get_enable_rsm_downgrade(conf=__conf__):
     """
     If False, the agent will not downgrade to a lower version when a lower version is requested in the goal state.
