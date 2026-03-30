@@ -254,13 +254,13 @@ class ExtSignatureValidation(AgentVmTest):
         # VmAccess 1.5 (signed, single-config) and ApplicationHealthLinux 2.0 (signed, no-config)
         # are additional extensions used to stress test signature validation by including multiple
         # signed extensions in a single goal state.
-        vmaccess_id_1_5 = VmExtensionIdentifier(publisher='Microsoft.OSTCExtensions.Edp', ext_type='VMAccessForLinux', version="1.5")
+        vmaccess_id_1_5 = VmExtensionIdentifier(publisher='Microsoft.OSTCExtensions', ext_type='VMAccessForLinux', version="1.5")
         vm_access_signed = ExtSignatureValidation._TestCase(
             VirtualMachineExtensionClient(self._context.vm, vmaccess_id_1_5),
             settings = None,
             protected_settings={'username': 'testuser'}
         )
-        ahl_id_2_0 = VmExtensionIdentifier(publisher='Microsoft.ManagedServices.Edp', ext_type='ApplicationHealthLinux', version="2.0")
+        ahl_id_2_0 = VmExtensionIdentifier(publisher='Microsoft.ManagedServices', ext_type='ApplicationHealthLinux', version="2.0")
         application_health_signed = ExtSignatureValidation._TestCase(
             VirtualMachineExtensionClient(self._context.vm, ahl_id_2_0),
             None
