@@ -154,6 +154,25 @@ class TestSignatureValidation(AgentTestCase):
                     with patch("azurelinuxagent.ga.signature_validation_util._agent_start_time", past_time):
                         self.assertTrue(signature_validation_enabled(), "Signature validation should be enabled after delay period")
 
+    def test_signature_validation_should_be_disabled_after_expiry_date(self):
+        """
+        Test that signature validation is disabled after the configured expiry date, and enabled before.
+        """
+        with patch("azurelinuxagent.ga.signature_validation_util.conf.get_signature_validation_enabled", return_value=True):
+            with patch("azurelinuxagent.ga.signature_validation_util.openssl_version_supported_for_signature_validation", return_value=True):
+                with patch("azurelinuxagent.ga.signature_validation_util.ConfidentialVMInfo.is_confidential_vm", return_value=True):
+                    with patch("azurelinuxagent.ga.signature_validation_util._should_delay_signature_validation", return_value=False):
+
+                        # Test 1: Current date is before expiry date - validation should be enabled
+                        with patch("azurelinuxagent.ga.signature_validation_util.conf.get_signature_validation_expiry_time", return_value="2099-01-01"):
+                            self.assertTrue(signature_validation_enabled(),
+                                            "Signature validation should be enabled before expiry date")
+
+                        # Test 2: Current date is after expiry date - validation should be disabled
+                        with patch("azurelinuxagent.ga.signature_validation_util.conf.get_signature_validation_expiry_time", return_value="2000-01-01"):
+                            self.assertFalse(signature_validation_enabled(),
+                                             "Signature validation should be disabled after expiry date")
+
 
 class TestHandlerManifestValidation(AgentTestCase):
 

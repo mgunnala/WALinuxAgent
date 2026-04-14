@@ -380,12 +380,16 @@ def signature_validation_enabled():
     - Initial delay period after agent start has passed (TODO: remove after telemetry release)
     - OpenSSL version supports required validation parameters (TODO: remove after timestamp validation implemented)
     - Agent is running on a Confidential VM (TODO: remove when all VMs are supported)
+    - Current date is before the expiry date for signature validation (TODO: remove after telemetry release)
     """
+    expiry_date = datetime.datetime.strptime(conf.get_signature_validation_expiry_time(), "%Y-%m-%d").replace(tzinfo=UTC)
+    
     return conf.get_signature_validation_enabled() and \
         not SignatureValidationTimeout.is_validation_disabled() and \
         not _should_delay_signature_validation() and \
         openssl_version_supported_for_signature_validation() and \
-        ConfidentialVMInfo.is_confidential_vm()
+        ConfidentialVMInfo.is_confidential_vm() and \
+        datetime.datetime.now(UTC) < expiry_date
 
 
 def cleanup_package_with_invalid_signature(package_file):
